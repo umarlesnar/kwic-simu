@@ -1,0 +1,23 @@
+import React from "react";
+import {
+  Link,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
+import { GoArrowLeft } from "react-icons/go";
+
+function WAOutgoingStatusMessagePage() {
+  return (
+    <div className="h-screen  bg-green-400">
+      <div className="px-3 py-2 border-b border-[#1a1a1a]   ">
+        <Link to="/whatsapp" className="flex gap-2 items-center ">
+          <GoArrowLeft className="text-2xl text-black" />
+          <span className="text-black font-semibold">Back</span>
+        </Link>
+      </div>
+      <div className="mx-auto p-3 md:p-6"></div>
+    </div>
+  );
+}
+export default WAOutgoingStatusMessagePage;

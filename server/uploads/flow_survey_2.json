@@ -1,0 +1,120 @@
+{
+    "version": "7.2",
+    "screens": [
+      {
+        "id": "USAGE",
+        "title": "Feedback 1 of 2",
+        "data": {},
+        "layout": {
+          "type": "SingleColumnLayout",
+          "children": [
+            {
+              "type": "Form",
+              "name": "form",
+              "children": [
+                {
+                  "type": "TextSubheading",
+                  "text": "How often do you use our product?"
+                },
+                {
+                  "type": "RadioButtonsGroup",
+                  "label": "Choose one",
+                  "name": "Usage_frequency",
+                  "data-source": [
+                    { "id": "0_Daily", "title": "Daily" },
+                    { "id": "1_Weekly", "title": "Weekly" },
+                    { "id": "2_Monthly", "title": "Monthly" },
+                    { "id": "3_Rarely", "title": "Rarely" }
+                  ],
+                  "required": true
+                },
+                {
+                  "type": "TextSubheading",
+                  "text": "What feature do you use the most?"
+                },
+                {
+                  "type": "TextField",
+                  "label": "Feature name",
+                  "required": false,
+                  "name": "Favorite_feature"
+                },
+                {
+                  "type": "Footer",
+                  "label": "Continue",
+                  "on-click-action": {
+                    "name": "navigate",
+                    "next": {
+                      "type": "screen",
+                      "name": "SATISFACTION"
+                    },
+                    "payload": {
+                      "screen_0_Usage_frequency_0": "${form.Usage_frequency}",
+                      "screen_0_Favorite_feature_1": "${form.Favorite_feature}"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "SATISFACTION",
+        "title": "Feedback 2 of 2",
+        "data": {
+          "screen_0_Usage_frequency_0": { "type": "string", "__example__": "Example" },
+          "screen_0_Favorite_feature_1": { "type": "string", "__example__": "Example" }
+        },
+        "terminal": true,
+        "success": true,
+        "layout": {
+          "type": "SingleColumnLayout",
+          "children": [
+            {
+              "type": "Form",
+              "name": "form",
+              "children": [
+                {
+                  "type": "TextSubheading",
+                  "text": "Overall, how satisfied are you with the product?"
+                },
+                {
+                  "type": "Dropdown",
+                  "label": "Satisfaction level",
+                  "required": true,
+                  "name": "Satisfaction_level",
+                  "data-source": [
+                    { "id": "0_Very_Satisfied", "title": "Very Satisfied" },
+                    { "id": "1_Satisfied", "title": "Satisfied" },
+                    { "id": "2_Neutral", "title": "Neutral" },
+                    { "id": "3_Dissatisfied", "title": "Dissatisfied" },
+                    { "id": "4_Very_Dissatisfied", "title": "Very Dissatisfied" }
+                  ]
+                },
+                {
+                  "type": "TextArea",
+                  "label": "Additional comments",
+                  "required": false,
+                  "name": "Additional_comments"
+                },
+                {
+                  "type": "Footer",
+                  "label": "Done",
+                  "on-click-action": {
+                    "name": "complete",
+                    "payload": {
+                      "screen_1_Satisfaction_level_0": "${form.Satisfaction_level}",
+                      "screen_1_Additional_comments_1": "${form.Additional_comments}",
+                      "screen_0_Usage_frequency_0": "${data.screen_0_Usage_frequency_0}",
+                      "screen_0_Favorite_feature_1": "${data.screen_0_Favorite_feature_1}"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+  

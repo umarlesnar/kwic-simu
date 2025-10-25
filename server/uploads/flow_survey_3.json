@@ -1,0 +1,136 @@
+{
+    "version": "7.2",
+    "screens": [
+      {
+        "id": "ATTENDANCE",
+        "title": "Feedback 1 of 2",
+        "data": {},
+        "layout": {
+          "type": "SingleColumnLayout",
+          "children": [
+            {
+              "type": "Form",
+              "name": "form",
+              "children": [
+                {
+                  "type": "TextSubheading",
+                  "text": "Which event did you attend?"
+                },
+                {
+                  "type": "Dropdown",
+                  "label": "Select event",
+                  "required": true,
+                  "name": "Event_attended",
+                  "data-source": [
+                    { "id": "0_Workshop", "title": "Workshop" },
+                    { "id": "1_Seminar", "title": "Seminar" },
+                    { "id": "2_Conference", "title": "Conference" },
+                    { "id": "3_Webinar", "title": "Webinar" }
+                  ]
+                },
+                {
+                  "type": "TextSubheading",
+                  "text": "Would you attend again?"
+                },
+                {
+                  "type": "RadioButtonsGroup",
+                  "label": "Choose one",
+                  "name": "Attend_again",
+                  "data-source": [
+                    { "id": "0_Yes", "title": "Yes" },
+                    { "id": "1_No", "title": "No" }
+                  ],
+                  "required": true
+                },
+                {
+                  "type": "Footer",
+                  "label": "Continue",
+                  "on-click-action": {
+                    "name": "navigate",
+                    "next": {
+                      "type": "screen",
+                      "name": "EXPERIENCE"
+                    },
+                    "payload": {
+                      "screen_0_Event_attended_0": "${form.Event_attended}",
+                      "screen_0_Attend_again_1": "${form.Attend_again}"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "EXPERIENCE",
+        "title": "Feedback 2 of 2",
+        "data": {
+          "screen_0_Event_attended_0": { "type": "string", "__example__": "Example" },
+          "screen_0_Attend_again_1": { "type": "string", "__example__": "Example" }
+        },
+        "terminal": true,
+        "success": true,
+        "layout": {
+          "type": "SingleColumnLayout",
+          "children": [
+            {
+              "type": "Form",
+              "name": "form",
+              "children": [
+                {
+                  "type": "TextSubheading",
+                  "text": "Please rate the event aspects:"
+                },
+                {
+                  "type": "Dropdown",
+                  "label": "Speaker quality",
+                  "required": true,
+                  "name": "Speaker_quality",
+                  "data-source": [
+                    { "id": "0_Excellent", "title": "Excellent" },
+                    { "id": "1_Good", "title": "Good" },
+                    { "id": "2_Average", "title": "Average" },
+                    { "id": "3_Poor", "title": "Poor" }
+                  ]
+                },
+                {
+                  "type": "Dropdown",
+                  "label": "Venue or platform",
+                  "required": true,
+                  "name": "Venue_quality",
+                  "data-source": [
+                    { "id": "0_Excellent", "title": "Excellent" },
+                    { "id": "1_Good", "title": "Good" },
+                    { "id": "2_Average", "title": "Average" },
+                    { "id": "3_Poor", "title": "Poor" }
+                  ]
+                },
+                {
+                  "type": "TextArea",
+                  "label": "What could we improve?",
+                  "required": false,
+                  "name": "Improvements"
+                },
+                {
+                  "type": "Footer",
+                  "label": "Done",
+                  "on-click-action": {
+                    "name": "complete",
+                    "payload": {
+                      "screen_1_Speaker_quality_0": "${form.Speaker_quality}",
+                      "screen_1_Venue_quality_1": "${form.Venue_quality}",
+                      "screen_1_Improvements_2": "${form.Improvements}",
+                      "screen_0_Event_attended_0": "${data.screen_0_Event_attended_0}",
+                      "screen_0_Attend_again_1": "${data.screen_0_Attend_again_1}"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+  

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mock Facebook Login Test</title>
+  </head>
+  <body>
+    <h1>Mock Facebook SDK Test</h1>
+    <button onclick="handleFacebookLogin()">Login with Facebook</button>
+
+    <script>
+      // Load script only after the DOM is fully loaded
+      document.addEventListener("DOMContentLoaded", function () {
+        var script = document.createElement("script");
+        script.src = "https://wb.nekhop.com/js/sdk.js"; // Load mock SDK
+        script.async = true;
+        document.body.appendChild(script);
+      });
+
+      function handleFacebookLogin() {
+        if (!window.FB) {
+          console.error("Facebook SDK not loaded");
+          return;
+        }
+
+        window.FB.login((response) => {
+          console.log("Facebook login response:", response);
+          if (response.status === "connected") {
+            // alert(`Login successful! Email: ${response.authResponse.email}`);
+          } else {
+            // alert("Login failed!");
+          }
+        });
+      }
+    </script>
+    <script type="module">
+      import Kwicbot from "https://kwic-prod.pages.dev/kwic-widget-v1-dev.js";
+      Kwicbot.initStandard({
+        ppk: "9ae8f7082c5f6cb1574f9855ed08e32262f9e6b6",
+        welcomeMessage: "Hi! How can we help?",
+        logo: "https://static.kwic.in/skmvg/app/687b47f7d96d6bb45c656618.png",
+        color: "#4AC959",
+        headline: "chat widget",
+        status: "Connect",
+        buttonText: "",
+        initialChoices: [],
+      });
+    </script>
+  </body>
+</html>

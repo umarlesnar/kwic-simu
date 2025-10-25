@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mock Facebook Login</title>
+  </head>
+  <body style="text-align: center; padding: 20px">
+    <h2>Mock Facebook Login</h2>
+    <input
+      type="text"
+      id="app_id"
+      value="1400000001"
+      placeholder="APP ID"
+      style="display: block; margin-bottom: 10px; width: 80%; padding: 8px"
+    />
+    <input
+      type="text"
+      id="wba_id"
+      value="1100000001"
+      placeholder="WBA ID"
+      style="display: block; margin-bottom: 10px; width: 80%; padding: 8px"
+    />
+
+    <button onclick="handleLogin()" style="padding: 10px; width: 80%">
+      Register
+    </button>
+
+    <script>
+      function encodeBase64(jsonData) {
+        try {
+          const jsonString = JSON.stringify(jsonData); // Convert JSON to string
+          return btoa(unescape(encodeURIComponent(jsonString))); // Encode to Base64
+        } catch (error) {
+          console.error("Error encoding to Base64:", error);
+          return null;
+        }
+      }
+      function handleLogin() {
+        const app_id = document.getElementById("app_id").value;
+        const wba_id = document.getElementById("wba_id").value;
+
+        const data = { app_id: app_id, wba_id: wba_id };
+        const base64String = encodeBase64(data);
+
+        const response = {
+          status: "connected",
+          authResponse: {
+            userID: null,
+            expiresIn: null,
+            code: base64String,
+          },
+        };
+
+        // Send data back to the main window
+        window.opener.postMessage({ type: "MOCK_FB_LOGIN", response }, "*");
+
+        // Close the pop-up
+        window.close();
+      }
+    </script>
+  </body>
+</html>
