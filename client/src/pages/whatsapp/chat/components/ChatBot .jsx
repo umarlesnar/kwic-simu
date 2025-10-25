@@ -1604,7 +1604,7 @@ const ChatBot = ({
       >
         <div className="flex items-center space-x-2 ">
           {/* <img src={logoUrl} alt="Logo" className="h-8 w-8" /> */}
-          <span className="font-semibold">ChatBot</span>
+          <span className="font-semibold">{session?.phone_number?.value?.display_phone_number || wa_id || "ChatBot"}</span>
         </div>
         <div className="flex space-x-3">
           <div onClick={fetchMessages} className="cursor-pointer">

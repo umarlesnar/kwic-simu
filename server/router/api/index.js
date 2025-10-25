@@ -707,6 +707,7 @@ ApiRouter.get("/wb-accounts", async (req, res) => {
   );
   res.json(final_data);
 });
+
 // Custom validation function
 const validateLoginInput = (username, password) => {
   const errors = {};
@@ -1184,5 +1185,76 @@ ApiRouter.post(
     });
   }
 );
+
+// Delete multiple messages by IDs
+ApiRouter.delete("/:dynamic_value/messages", async (req, res) => {
+  try {
+    const { dynamic_value } = req.params;
+    const { messageIds } = req.body;
+
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+      return res.status(400).json({ success: false, message: "messageIds array is required" });
+    }
+
+    const redis = await req.redisManager.getClient();
+    const deletedCount = { success: 0, failed: 0 };
+
+    for (const messageId of messageIds) {
+      try {
+        const keys = await req.redisManager.getKeysByPattern(`message:${dynamic_value}:*:${messageId}`);
+        for (const key of keys) {
+          await redis.del(key);
+          const orderKey = key.replace('message:', 'order:');
+          await redis.del(orderKey);
+          deletedCount.success++;
+        }
+      } catch (e) {
+        deletedCount.failed++;
+      }
+    }
+
+    return res.json({ success: true, deleted: deletedCount.success, failed: deletedCount.failed });
+  } catch (error) {
+    console.log("Error deleting messages:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// Delete client and all associated messages
+ApiRouter.delete("/:dynamic_value/client/:wa_id", async (req, res) => {
+  try {
+    const { dynamic_value, wa_id } = req.params;
+    const redis = await req.redisManager.getClient();
+
+    // Delete all messages for this client
+    const messageKeys = await req.redisManager.getKeysByPattern(`message:${dynamic_value}:${wa_id}:*`);
+    for (const key of messageKeys) {
+      await redis.del(key);
+    }
+
+    // Delete all orders for this client
+    const orderKeys = await req.redisManager.getKeysByPattern(`order:${dynamic_value}:${wa_id}:*`);
+    for (const key of orderKeys) {
+      await redis.del(key);
+    }
+
+    // Delete conversation
+    const conversationKeys = await req.redisManager.getKeysByPattern(`conversation:${dynamic_value}:${wa_id}:*`);
+    for (const key of conversationKeys) {
+      await redis.del(key);
+    }
+
+    // Delete client profile
+    const clientKeys = await req.redisManager.getKeysByPattern(`wb:*:${dynamic_value}:client:${wa_id}`);
+    for (const key of clientKeys) {
+      await redis.del(key);
+    }
+
+    return res.json({ success: true, message: "Client and all associated data deleted" });
+  } catch (error) {
+    console.log("Error deleting client:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
 
 module.exports = ApiRouter;
