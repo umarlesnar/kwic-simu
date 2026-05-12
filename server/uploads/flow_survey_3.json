@@ -1,0 +1,142 @@
+{
+  "version": "7.2",
+  "screens": [
+    {
+      "id": "CONTACT_DETAILS",
+      "title": "Contact Us 1 of 2",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextSubheading",
+                "text": "We’re here to help! Please share your contact details."
+              },
+              {
+                "type": "TextField",
+                "label": "Full Name",
+                "required": true,
+                "name": "Full_Name"
+              },
+              {
+                "type": "TextField",
+                "label": "Email Address",
+                "required": true,
+                "name": "Email_Address"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "What would you like to contact us about?"
+              },
+              {
+                "type": "Dropdown",
+                "label": "Select a topic",
+                "required": true,
+                "name": "Contact_Reason",
+                "data-source": [
+                  { "id": "0_Product_Inquiry", "title": "Product Inquiry" },
+                  { "id": "1_Billing_Issue", "title": "Billing Issue" },
+                  { "id": "2_Technical_Support", "title": "Technical Support" },
+                  {
+                    "id": "3_Feedback_Suggestion",
+                    "title": "Feedback or Suggestion"
+                  },
+                  { "id": "4_Other", "title": "Other" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continue",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": {
+                    "type": "screen",
+                    "name": "CONTACT_DETAILS_CONFIRM"
+                  },
+                  "payload": {
+                    "screen_0_Full_Name_0": "${form.Full_Name}",
+                    "screen_0_Email_Address_1": "${form.Email_Address}",
+                    "screen_0_Contact_Reason_2": "${form.Contact_Reason}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "CONTACT_DETAILS_CONFIRM",
+      "title": "Contact Us 2 of 2",
+      "data": {
+        "screen_0_Full_Name_0": { "type": "string", "__example__": "Example" },
+        "screen_0_Email_Address_1": {
+          "type": "string",
+          "__example__": "Example"
+        },
+        "screen_0_Contact_Reason_2": {
+          "type": "string",
+          "__example__": "Example"
+        }
+      },
+      "terminal": true,
+      "success": true,
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextSubheading",
+                "text": "Please describe your issue or message."
+              },
+              {
+                "type": "TextArea",
+                "label": "Your Message",
+                "required": true,
+                "name": "Message_Details"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "label": "Preferred contact method",
+                "name": "Contact_Method",
+                "data-source": [
+                  { "id": "0_Email", "title": "Email" },
+                  { "id": "1_Phone", "title": "Phone" }
+                ],
+                "required": true
+              },
+              {
+                "type": "TextField",
+                "label": "Phone Number (optional)",
+                "required": false,
+                "name": "Phone_Number"
+              },
+              {
+                "type": "Footer",
+                "label": "Submit",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "screen_1_Message_Details_0": "${form.Message_Details}",
+                    "screen_1_Contact_Method_1": "${form.Contact_Method}",
+                    "screen_1_Phone_Number_2": "${form.Phone_Number}",
+                    "screen_0_Full_Name_0": "${data.screen_0_Full_Name_0}",
+                    "screen_0_Email_Address_1": "${data.screen_0_Email_Address_1}",
+                    "screen_0_Contact_Reason_2": "${data.screen_0_Contact_Reason_2}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
