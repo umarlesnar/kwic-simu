@@ -7,8 +7,9 @@ import { LoadingSpinner } from "@common/LoadingSpinner";
 import { useNavigate } from "react-router-dom";
 import { ImSpinner11 } from "react-icons/im";
 import { IoAddCircle } from "react-icons/io5";
+import ClientGroupsModal from "./ClientGroupsModal";
 
-const ActionButtonGroup = ({ data, wba_id, phone_number_id, catalog_id, onDelete, onRename }) => {
+const ActionButtonGroup = ({ data, wba_id, phone_number_id, catalog_id, onDelete, onRename, onShowGroups }) => {
   const navigate = useNavigate();
   const [isBlocked, setIsBlocked] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -101,6 +102,13 @@ const ActionButtonGroup = ({ data, wba_id, phone_number_id, catalog_id, onDelete
         } px-2 py-1 text-xs font-medium ring-1 cursor-pointer`}
       >
         {isBlocked ? "Unblock" : "Block"}
+      </span>
+
+      <span
+        onClick={() => onShowGroups(data)}
+        className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-blue-600/20 cursor-pointer"
+      >
+        Groups
       </span>
 
       <span
@@ -266,6 +274,13 @@ const WBAClientTable = ({ wba_id, phone_number_id, catalog_id }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isAddingClient, setIsAddingClient] = useState(false);
+  const [isGroupsModalOpen, setIsGroupsModalOpen] = useState(false);
+  const [selectedClient, setSelectedClient] = useState(null);
+
+  const handleShowGroups = (client) => {
+    setSelectedClient(client);
+    setIsGroupsModalOpen(true);
+  };
 
   const fetchBusinesses = useCallback(async () => {
     try {
@@ -343,6 +358,7 @@ const WBAClientTable = ({ wba_id, phone_number_id, catalog_id }) => {
             catalog_id={catalog_id}
             onDelete={handleDeleteClient}
             onRename={handleRenameClient}
+            onShowGroups={handleShowGroups}
           />
         ),
       },
@@ -407,6 +423,13 @@ const WBAClientTable = ({ wba_id, phone_number_id, catalog_id }) => {
         isLoading={isAddingClient}
         phone_number_id={phone_number_id}
         wba_id={wba_id}
+      />
+      <ClientGroupsModal
+        isOpen={isGroupsModalOpen}
+        onClose={() => setIsGroupsModalOpen(false)}
+        phone_number_id={phone_number_id}
+        wba_id={wba_id}
+        client={selectedClient}
       />
       <div className="overflow-x-auto rounded-lg shadow">
         <table {...getTableProps()} className="min-w-full bg-white">

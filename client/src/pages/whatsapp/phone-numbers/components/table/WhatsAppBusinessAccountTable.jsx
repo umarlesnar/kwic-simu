@@ -224,6 +224,10 @@ const WhatsAppBusinessAccountTable = () => {
       navigate(`/whatsapp/catalog/${item.wba_id}/${item.catalog_id}`, {
         state: { returnPath: "/whatsapp" },
       });
+    } else if (type == "GROUPS") {
+      navigate(`/whatsapp/groups/${item.id}`, {
+        state: { returnPath: "/whatsapp" },
+      });
     } else {
       console.log("TYPE NOT FOUND");
     }
@@ -417,6 +421,12 @@ const WhatsAppBusinessAccountTable = () => {
                         className="inline-flex items-center rounded-md bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700 ring-1 ring-green-600/20 ring-inset cursor-pointer"
                       >
                         Catalog
+                      </span>
+                      <span
+                        onClick={() => handleBtnNavigation("GROUPS", business)}
+                        className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 ring-1 ring-green-600/20 ring-inset cursor-pointer"
+                      >
+                        Groups
                       </span>
                     </div>
                   </div>

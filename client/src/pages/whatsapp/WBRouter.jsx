@@ -7,6 +7,7 @@ import WAClientListPage from "./clients/WAClientListPage";
 import WAChatWindowPage from "./chat/WAChatWindowPage";
 import OrderMessagePage from "./ecommerce/OrderMessagePage";
 import CatalogMessagePage from "./catalog/CatalogMessagePage";
+import WAGroupsPage from "./groups/WAGroupsPage";
 function WBAppRouter() {
   return (
     <Routes>
@@ -32,6 +33,10 @@ function WBAppRouter() {
         <Route
           path="catalog/:wba_id/:catalog_id"
           element={<CatalogMessagePage />}
+        />
+        <Route
+          path="groups/:phone_number_id"
+          element={<WAGroupsPage />}
         />
         <Route
           path="message-status"

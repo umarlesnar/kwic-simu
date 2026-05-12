@@ -232,4 +232,30 @@ export const businessService = {
       );
     }
   },
+
+  // Get groups for a specific client
+  getClientGroups: async (phone_number_id, wa_id) => {
+    try {
+      const response = await http.get(`/${phone_number_id}/participant/${wa_id}/groups`);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.message || "Failed to fetch client groups"
+      );
+    }
+  },
+
+  // Upload media
+  uploadMedia: async (formData) => {
+    try {
+      const response = await http.post("/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.message || "Failed to upload media"
+      );
+    }
+  },
 };

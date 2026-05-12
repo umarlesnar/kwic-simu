@@ -13,6 +13,7 @@ const {
   generateUniqueId,
 } = require("./../../../utils/FileUploadManager");
 const { getIO } = require("../../../utils/ws/SocketManager");
+const groupsRouter = require("./groups");
 
 const uploadDir = path.join(__dirname, "./../../../uploads");
 
@@ -69,6 +70,8 @@ function identifyType(value) {
     return "ad_id";
   } else if (value.startsWith("act_")) {
     return "ad_account_id";
+  } else if (value.includes("@g.us")) {
+    return "group_id";
   } else if (value.length > 10 && /^\d+$/.test(value)) {
     return "flow_id";
   } else {
@@ -2762,5 +2765,8 @@ router.delete("/:dynamic_value/message_qrdls/:qr_code_id", async (req, res) => {
 
   res.json({ success: true });
 });
+
+// Register Groups API routes
+router.use("/", groupsRouter);
 
 module.exports = router;

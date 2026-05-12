@@ -8,6 +8,9 @@ const useragent = require("useragent");
 const geoip = require("geoip-lite");
 const { body, validationResult } = require("express-validator");
 const { getIO } = require("../../utils/ws/SocketManager");
+const groupsRouter = require("../v14.0/router/groups");
+
+ApiRouter.use("/", groupsRouter);
 
 const task_url =
   process.env.TASK_API_URL || "https://master-node.nekhop.com/run-task";
@@ -594,6 +597,10 @@ ApiRouter.post("/webhook/push", async (req, res) => {
               ? new Date(parseInt(msg.timestamp, 10) * 1000).toISOString()
               : new Date().toISOString();
 
+            // Detect if this is a group message
+            const groupId = msg.context?.group_id;
+            const conversationId = groupId || contactWaId;
+
             // Persist the FULL original WhatsApp message payload to avoid losing fields
             const storedMessage = {
               id: msgId,
@@ -604,10 +611,24 @@ ApiRouter.post("/webhook/push", async (req, res) => {
               message: msg, // full raw payload for all message types
               created_at: createdAt,
               status: "delivered",
+              direction: "incoming"
             };
 
-            const messageKey = `message:${phoneNumberId}:${contactWaId}:${msgId}`;
+            const messageKey = `message:${phoneNumberId}:${conversationId}:${msgId}`;
             await req.redisManager.putByKey(messageKey, storedMessage, -1);
+
+            // Emit socket event for real-time updates (This was missing for webhooks!)
+            try {
+              const io = getIO();
+              const topic = `message/whatsapp/${conversationId}`;
+              io.to(topic).emit("topic-data", {
+                topic,
+                data: storedMessage,
+                timestamp: new Date(),
+              });
+            } catch (error) {
+              console.log("Error emitting socket event for webhook:", error);
+            }
 
             // Optionally persist order details for order-type messages
             if (
