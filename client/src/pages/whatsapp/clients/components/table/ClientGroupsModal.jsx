@@ -19,7 +19,7 @@ import WBMessages from "@utils/WBMessages";
 import { WebhookService } from "@api/WebhookService";
 
 const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client }) => {
-  const [view, setView] = useState("list"); // 'list', 'chat', 'join', 'requests'
+  const [view, setView] = useState("list"); // 'list', 'chat', 'join'
   const [groups, setGroups] = useState([]);
   const [activeGroup, setActiveGroup] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -32,10 +32,6 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
   // Join Group State
   const [inviteLink, setInviteLink] = useState("");
   const [isJoining, setIsJoining] = useState(false);
-
-  // Join Requests State
-  const [joinRequests, setJoinRequests] = useState([]);
-  const [requestsLoading, setRequestsLoading] = useState(false);
   
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -107,17 +103,7 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
     }
   }, [phone_number_id]);
 
-  const fetchJoinRequests = useCallback(async (groupId) => {
-    try {
-      setRequestsLoading(true);
-      const response = await businessService.getGroupJoinRequests(groupId);
-      setJoinRequests(response.data || []);
-    } catch (err) {
-      toast.error("Failed to fetch join requests: " + err.message);
-    } finally {
-      setRequestsLoading(false);
-    }
-  }, []);
+  
 
   useEffect(() => {
     if (isOpen && view === "list") {
@@ -135,8 +121,9 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
     setView("list");
     setActiveGroup(null);
     setMessages([]);
-    setJoinRequests([]);
   };
+
+  
 
   const handleJoinGroup = async (e) => {
     e?.preventDefault();
@@ -160,26 +147,6 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
       toast.error(err.message || "Failed to join group");
     } finally {
       setIsJoining(false);
-    }
-  };
-
-  const handleApproveRequest = async (waId) => {
-    try {
-      await businessService.approveJoinRequests(activeGroup.id, [waId]);
-      toast.success(`Approved ${waId}`);
-      fetchJoinRequests(activeGroup.id);
-    } catch (err) {
-      toast.error("Failed to approve: " + err.message);
-    }
-  };
-
-  const handleRejectRequest = async (waId) => {
-    try {
-      await businessService.rejectJoinRequests(activeGroup.id, [waId]);
-      toast.success(`Rejected ${waId}`);
-      fetchJoinRequests(activeGroup.id);
-    } catch (err) {
-      toast.error("Failed to reject: " + err.message);
     }
   };
 
@@ -286,12 +253,10 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
             <div>
               <h2 className="text-lg font-bold text-gray-900 dark:text-white truncate max-w-[300px]">
                 {view === "chat" ? activeGroup.subject : 
-                 view === "join" ? "Join New Group" :
-                 view === "requests" ? "Join Requests" : "Client Groups"}
+                 view === "join" ? "Join New Group" : "Client Groups"}
               </h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 {view === "chat" ? `${activeGroup.participant_count} participants` : 
-                 view === "requests" ? activeGroup?.subject :
                  `${client?.profile?.name || client?.wa_id}'s groups`}
               </p>
             </div>
@@ -304,18 +269,6 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
               >
                 <MdGroupAdd className="text-lg" />
                 Join Group
-              </button>
-            )}
-            {view === "chat" && (
-              <button
-                onClick={() => {
-                  setView("requests");
-                  fetchJoinRequests(activeGroup.id);
-                }}
-                className="flex items-center gap-2 px-3 py-1.5 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 transition-colors shadow-sm"
-              >
-                <MdPersonAdd className="text-lg" />
-                Requests
               </button>
             )}
             <button
@@ -370,6 +323,10 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
             </div>
           )}
 
+            
+
+            
+
           {view === "join" && (
             <div className="flex-1 p-6">
               <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 max-w-md mx-auto mt-10">
@@ -405,64 +362,7 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
                     </button>
                   </div>
                 </form>
-                <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
-                  <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
-                    <strong>Note:</strong> If the group has manual approval enabled, your request will be sent to the group admins for review.
-                  </p>
-                </div>
               </div>
-            </div>
-          )}
-
-          {view === "requests" && (
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {requestsLoading ? (
-                <div className="flex justify-center py-20">
-                  <ImSpinner11 className="text-4xl text-blue-600 animate-spin" />
-                </div>
-              ) : joinRequests.length === 0 ? (
-                <div className="text-center py-20">
-                  <MdPersonAdd className="text-6xl text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500 font-medium">No pending join requests</p>
-                  <button
-                    onClick={() => setView("chat")}
-                    className="mt-4 text-blue-600 hover:underline text-sm font-bold"
-                  >
-                    Back to Chat
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Pending Approval</h3>
-                  {joinRequests.map((request) => (
-                    <div 
-                      key={request.wa_id}
-                      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 flex justify-between items-center shadow-sm"
-                    >
-                      <div>
-                        <p className="font-bold text-gray-900 dark:text-white">{request.wa_id}</p>
-                        <p className="text-[10px] text-gray-500 mt-0.5">Requested: {new Date(request.requested_at).toLocaleString()}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleApproveRequest(request.wa_id)}
-                          className="p-2 bg-green-100 text-green-600 hover:bg-green-600 hover:text-white rounded-lg transition-all"
-                          title="Approve"
-                        >
-                          <MdCheck className="text-xl" />
-                        </button>
-                        <button
-                          onClick={() => handleRejectRequest(request.wa_id)}
-                          className="p-2 bg-red-100 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-all"
-                          title="Reject"
-                        >
-                          <MdCancel className="text-xl" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 

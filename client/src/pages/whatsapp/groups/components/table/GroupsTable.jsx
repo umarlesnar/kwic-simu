@@ -15,7 +15,7 @@ function GroupsTable({
       try {
         await axios.delete(`/v14.0/${groupId}`, {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         });
         onGroupDeleted(groupId);
@@ -26,8 +26,13 @@ function GroupsTable({
     }
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString();
+  const formatDate = (dateValue) => {
+    if (!dateValue) return "N/A";
+    const timestamp = parseInt(dateValue);
+    if (!isNaN(timestamp) && timestamp > 1000000000 && timestamp < 10000000000) {
+      return new Date(timestamp * 1000).toLocaleDateString();
+    }
+    return new Date(dateValue).toLocaleDateString();
   };
 
   return (

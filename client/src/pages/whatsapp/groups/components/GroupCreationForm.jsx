@@ -8,6 +8,7 @@ function GroupCreationForm({ phone_number_id, onClose, onGroupCreated }) {
     subject: "",
     description: "",
     join_approval_mode: "auto_approve",
+    participant_phone_numbers: [],
   });
   const [participantInput, setParticipantInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -59,30 +60,31 @@ function GroupCreationForm({ phone_number_id, onClose, onGroupCreated }) {
 
     try {
       setLoading(true);
-      console.log("Submitting group creation form...", {
-        url: `/v14.0/${phone_number_id}/groups`,
-        data: formData
-      });
+      // console.log("Submitting group creation form...", {
+      //   url: `/v14.0/${phone_number_id}/groups`,
+      //   data: formData
+      // });
       const response = await axios.post(
         `/v14.0/${phone_number_id}/groups`,
         formData,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJ3YmFfaWQiOiIxMTAwMDAwMDAwMDAxIiwiYXBwX2lkIjoiMTQwMDAwMDAwMSJ9"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
 
       // Fetch the created group details
       const groupResponse = await axios.get(
-        `/v14.0/${response.data.id}`,
+        `/v14.0/${response.data.group_id}`,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
 
+      setLoading(false);
       onGroupCreated(groupResponse.data);
     } catch (err) {
       console.error("Error creating group:", err);

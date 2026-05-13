@@ -95,7 +95,7 @@ function WAGroupsPage() {
         `/v14.0/${phone_number_id}/groups?limit=${limit}&offset=${offset}`,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJ3YmFfaWQiOiIxMTAwMDAwMDAwMDAxIiwiYXBwX2lkIjoiMTQwMDAwMDAwMSJ9"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
@@ -117,7 +117,7 @@ function WAGroupsPage() {
         `/v14.0/${groupId}`,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
@@ -186,7 +186,7 @@ function WAGroupsPage() {
           <div className="flex gap-2">
             <button
               onClick={() => setShowCreateForm(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold shadow-sm"
             >
               Create Group
             </button>

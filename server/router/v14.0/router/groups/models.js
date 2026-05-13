@@ -132,7 +132,7 @@ function formatGroupResponse(group) {
     participants: group.participants.map(p => ({
       wa_id: typeof p === 'string' ? p : p.wa_id
     })),
-    total_participant_count: group.participant_count - 1, // Excluding the business according to docs
+    total_participant_count: group.participant_count, // Excluding the business according to docs
     creation_timestamp: Math.floor(new Date(group.created_at).getTime() / 1000),
     suspended: group.suspended || false,
   };
@@ -149,8 +149,8 @@ function formatGroupListResponse(group) {
     subject: group.subject,
     description: group.description,
     join_approval_mode: group.join_approval_mode,
-    total_participant_count: (group.participant_count || 1) - 1,
-    created_at: Math.floor(new Date(group.created_at).getTime() / 1000).toString(),
+    total_participant_count: (group.participant_count || 1),
+    creation_timestamp: Math.floor(new Date(group.created_at).getTime() / 1000).toString(),
   };
 }
 

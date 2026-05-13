@@ -29,7 +29,7 @@ function JoinGroupForm({ onClose, onJoined, phone_number_id }) {
         },
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );

@@ -20,7 +20,6 @@ function GroupDetailsModal({
   const [newParticipant, setNewParticipant] = useState("");
   const [joinRequests, setJoinRequests] = useState([]);
   const [inviteLink, setInviteLink] = useState(null);
-  const [simulationWaId, setSimulationWaId] = useState("");
 
   // Fetch join requests and invite link
   useEffect(() => {
@@ -34,7 +33,7 @@ function GroupDetailsModal({
         `/v14.0/${group.id}/join_requests`,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
@@ -50,7 +49,7 @@ function GroupDetailsModal({
         `/v14.0/${group.id}/invite_link`,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
@@ -74,7 +73,7 @@ function GroupDetailsModal({
         },
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
@@ -101,7 +100,7 @@ function GroupDetailsModal({
         },
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
@@ -128,7 +127,7 @@ function GroupDetailsModal({
             participants: [waId]
           },
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
@@ -152,7 +151,7 @@ function GroupDetailsModal({
         },
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
@@ -177,7 +176,7 @@ function GroupDetailsModal({
             join_requests: [waId]
           },
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
@@ -190,30 +189,7 @@ function GroupDetailsModal({
     }
   };
 
-  const handleSimulateJoinRequest = async () => {
-    if (!simulationWaId.trim()) return;
-
-    try {
-      setLoading(true);
-      await axios.post(
-        `/v14.0/${phone_number_id}/groups/${group.id}/simulate_join_request`,
-        { wa_id: simulationWaId.trim() },
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
-          },
-        }
-      );
-      setSimulationWaId("");
-      fetchJoinRequests();
-      alert("Simulation join request sent!");
-    } catch (err) {
-      console.error("Error simulating join request:", err);
-      setError(err.response?.data?.error || "Failed to simulate join request");
-    } finally {
-      setLoading(false);
-    }
-  };
+  
 
   const refreshGroup = async () => {
     try {
@@ -221,7 +197,7 @@ function GroupDetailsModal({
         `/v14.0/${group.id}`,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
@@ -239,7 +215,7 @@ function GroupDetailsModal({
         {},
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
@@ -259,7 +235,7 @@ function GroupDetailsModal({
       setLoading(true);
       await axios.delete(`/v14.0/${group.id}`, {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+          Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
         },
       });
       onGroupDeleted(group.id);
@@ -272,13 +248,20 @@ function GroupDetailsModal({
     }
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleString();
+  const formatDate = (dateValue) => {
+    if (!dateValue) return "N/A";
+    // Check if it's a Unix timestamp (seconds)
+    const timestamp = parseInt(dateValue);
+    if (!isNaN(timestamp) && timestamp > 1000000000 && timestamp < 10000000000) {
+      return new Date(timestamp * 1000).toLocaleString();
+    }
+    return new Date(dateValue).toLocaleString();
   };
 
   const tabs = [
     { id: "overview", label: "Overview", icon: <MdInfo /> },
     { id: "participants", label: "Participants", icon: <MdPeople /> },
+    { id: "join_requests", label: "Join Requests", icon: <MdPersonAdd /> },
     { id: "settings", label: "Settings", icon: <MdSettings /> },
   ];
 
@@ -348,7 +331,7 @@ function GroupDetailsModal({
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
                   <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">Created At</p>
-                  <p className="text-gray-900 dark:text-white font-medium">{formatDate(group.created_at)}</p>
+                  <p className="text-gray-900 dark:text-white font-medium">{formatDate(group.creation_timestamp)}</p>
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
                   <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">Participants</p>
@@ -404,28 +387,74 @@ function GroupDetailsModal({
                 <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase">Member List</h4>
                 {group.participants && group.participants.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {group.participants.map((participant) => (
-                      <div
-                        key={participant}
-                        className="flex justify-between items-center p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm"
-                      >
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">
-                          {participant}
-                        </span>
-                        <button
-                          onClick={() => handleRemoveParticipant(participant)}
-                          disabled={loading}
-                          className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                          title="Remove Participant"
+                    {group.participants.map((participant) => {
+                      const waId = typeof participant === 'string' ? participant : participant.wa_id;
+                      return (
+                        <div
+                          key={waId}
+                          className="flex justify-between items-center p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm"
                         >
-                          <MdDelete className="text-lg" />
-                        </button>
-                      </div>
-                    ))}
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {waId}
+                          </span>
+                          <button
+                            onClick={() => handleRemoveParticipant(waId)}
+                            disabled={loading}
+                            className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                            title="Remove Participant"
+                          >
+                            <MdDelete className="text-lg" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-gray-500 dark:text-gray-400 italic">
                     No participants yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "join_requests" && (
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase">Pending Requests ({joinRequests.length})</h4>
+                {joinRequests.length > 0 ? (
+                  <div className="space-y-2">
+                    {joinRequests.map((request) => (
+                      <div
+                        key={request.wa_id}
+                        className="flex justify-between items-center p-4 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm"
+                      >
+                        <div>
+                          <p className="text-sm font-bold text-gray-900 dark:text-white">{request.wa_id}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">Requested: {formatDate(request.requested_at)}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleApproveJoinRequest(request.wa_id)}
+                            disabled={loading}
+                            className="px-3 py-1 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-700 transition-colors"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleRejectJoinRequest(request.wa_id)}
+                            disabled={loading}
+                            className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700 transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-gray-500 dark:text-gray-400 italic bg-gray-50 dark:bg-gray-800/50 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+                    No pending join requests.
                   </div>
                 )}
               </div>
