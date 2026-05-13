@@ -89,10 +89,10 @@ app.use((req, res, next) => {
 app.use("/files", express.static(uploadDir));
 
 const v14Routes = require("./router/v14.0/router");
+
 const apiRoutes = require("./router/api");
 const webhookRoutes = require("./router/webhook");
 const { verifyToken } = require("./utils/VerifyToken");
-
 app.use("/v14.0", v14Routes);
 app.use("/v21.0", v14Routes);
 app.use("/v22.0", v14Routes);

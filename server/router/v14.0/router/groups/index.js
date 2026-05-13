@@ -53,6 +53,36 @@ const {
   formatGroupListResponse,
   formatJoinRequestResponse,
 } = require("./models");
+const { getPhoneNumberIdByGroupId } = require("./groupService");
+
+/**
+ * Middleware to resolve phone_number_id from group_id
+ * Only applies to routes that have :group_id but not :phone_number_id
+ */
+router.use("/:group_id", async (req, res, next) => {
+  if (req.params.phone_number_id || req.path.includes("/test/")) {
+    return next();
+  }
+
+  const { group_id } = req.params;
+  
+  // Skip if group_id doesn't look like a group ID
+  if (!group_id.includes("@g.us")) {
+    return next();
+  }
+
+  const phoneNumberId = await getPhoneNumberIdByGroupId(req.redisManager, group_id);
+  if (phoneNumberId) {
+    req.params.phone_number_id = phoneNumberId;
+  } else {
+    // If it looks like a group ID but we can't find the phone number ID,
+    // we should still consider it a group request but it will likely 404 later.
+    // We don't want it to fall through to generic routes in index.js.
+    console.log(`Group ID ${group_id} not found in global map.`);
+  }
+  
+  next();
+});
 
 /**
  * POST /:phone_number_id/groups
@@ -94,8 +124,8 @@ router.post("/:phone_number_id/groups", async (req, res) => {
     const group = await createGroupInRedis(req.redisManager, phone_number_id, {
       subject,
       description: description || "",
-      join_approval_mode,
-      participants: participant_phone_numbers || [],
+      join_approval_mode: join_approval_mode || "auto_approve",
+      participants: [], // Docs: cannot manually add participants
     });
 
     // Emit webhook
@@ -104,7 +134,7 @@ router.post("/:phone_number_id/groups", async (req, res) => {
       req.redisStreamManager,
       phone_number_id,
       group.id,
-      "group_created",
+      "group_create",
       group,
       wbaId
     );
@@ -219,10 +249,27 @@ router.get("/:phone_number_id/groups/:group_id", async (req, res) => {
 });
 
 /**
- * PUT /:phone_number_id/groups/:group_id
+ * POST /:group_id
  * Update group settings
  */
-router.put("/:phone_number_id/groups/:group_id", async (req, res) => {
+router.post("/:group_id", async (req, res) => {
+  try {
+    // Extract phone_number_id from request if possible, or use a default/lookup
+    // In a real API, the group_id is enough.
+    // For the simulator, we might need to find which phone_number_id owns this group.
+    // However, the current structure requires it.
+    // Let's assume we can lookup by group_id or it's passed in some header.
+    // For now, I'll keep the :phone_number_id prefix for internal routing but add the alias.
+    
+    // Alias handled below in a catch-all for :group_id
+  } catch (error) {}
+});
+
+/**
+ * POST /:phone_number_id/groups/:group_id (LEGACY/INTERNAL)
+ * Update group settings
+ */
+router.post("/:phone_number_id/groups/:group_id", async (req, res) => {
   try {
     // Validate request
     const validation = validateUpdateGroupRequest(req);
@@ -353,7 +400,7 @@ router.delete("/:phone_number_id/groups/:group_id", async (req, res) => {
       req.redisStreamManager,
       phone_number_id,
       group_id,
-      "group_deleted",
+      "group_delete",
       group,
       wbaId
     );
@@ -467,11 +514,11 @@ router.post("/:phone_number_id/groups/:group_id/participants", async (req, res) 
 });
 
 /**
- * DELETE /:phone_number_id/groups/:group_id/participants/:wa_id
- * Remove a participant from a group
+ * DELETE /:phone_number_id/groups/:group_id/participants
+ * Remove participants from a group
  */
 router.delete(
-  "/:phone_number_id/groups/:group_id/participants/:wa_id",
+  "/:phone_number_id/groups/:group_id/participants",
   async (req, res) => {
     try {
       // Validate request
@@ -484,7 +531,9 @@ router.delete(
         );
       }
 
-      const { phone_number_id, group_id, wa_id } = req.params;
+      const { phone_number_id, group_id } = req.params;
+      const { participants } = req.body;
+      const waIds = participants.map(p => typeof p === 'string' ? p : (p.user || p.wa_id));
 
       // Get group from Redis
       const group = await getGroupFromRedis(
@@ -501,32 +550,34 @@ router.delete(
         );
       }
 
-      // Remove participant
-      const updatedGroup = await removeParticipantFromGroup(
-        req.redisManager,
-        phone_number_id,
-        group,
-        wa_id
-      );
+      const removed_participants = [];
+      const failed_participants = [];
 
-      if (!updatedGroup) {
-        return sendErrorResponse(
-          res,
-          HTTP_STATUS.NOT_FOUND,
-          ERROR_MESSAGES.PARTICIPANT_NOT_FOUND
+      for (const wa_id of waIds) {
+        // Remove participant
+        const updatedGroup = await removeParticipantFromGroup(
+          req.redisManager,
+          phone_number_id,
+          group,
+          wa_id
         );
-      }
 
-      // Emit webhook
-      const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
-      await emitGroupParticipantsWebhook(
-        req.redisStreamManager,
-        phone_number_id,
-        group_id,
-        "participant_removed",
-        wa_id,
-        wbaId
-      );
+        if (updatedGroup) {
+          removed_participants.push({ input: wa_id });
+          // Emit webhook
+          const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
+          await emitGroupParticipantsWebhook(
+            req.redisStreamManager,
+            phone_number_id,
+            group_id,
+            "group_participants_remove",
+            wa_id,
+            wbaId
+          );
+        } else {
+          failed_participants.push({ input: wa_id });
+        }
+      }
 
       // Emit Socket.IO event
       const io = require("../../../../utils/ws/SocketManager").getIO();
@@ -535,18 +586,20 @@ router.delete(
           topic: `group/${phone_number_id}`,
           data: {
             group_id,
-            action: "participant_removed",
-            wa_id,
+            action: "group_participants_remove",
+            removed_participants,
           },
           timestamp: new Date().toISOString(),
         });
       }
 
       res.status(HTTP_STATUS.OK).json({
-        message: "Participant removed successfully",
+        messaging_product: "whatsapp",
+        removed_participants,
+        ...(failed_participants.length > 0 ? { failed_participants } : {})
       });
     } catch (error) {
-      console.error("Error removing participant:", error);
+      console.error("Error removing participants:", error);
       sendErrorResponse(
         res,
         HTTP_STATUS.INTERNAL_SERVER_ERROR,
@@ -821,11 +874,11 @@ router.post(
 );
 
 /**
- * POST /:phone_number_id/groups/:group_id/join_requests/:wa_id/approve
- * Approve a join request
+ * POST /:phone_number_id/groups/:group_id/join_requests
+ * Approve join requests
  */
 router.post(
-  "/:phone_number_id/groups/:group_id/join_requests/:wa_id/approve",
+  "/:phone_number_id/groups/:group_id/join_requests",
   async (req, res) => {
     try {
       // Validate request
@@ -838,7 +891,8 @@ router.post(
         );
       }
 
-      const { phone_number_id, group_id, wa_id } = req.params;
+      const { phone_number_id, group_id } = req.params;
+      const { join_requests } = req.body;
 
       // Get group from Redis
       const group = await getGroupFromRedis(
@@ -855,71 +909,56 @@ router.post(
         );
       }
 
-      // Check if join request exists
-      const joinRequests = await getJoinRequests(
-        req.redisManager,
-        phone_number_id,
-        group_id
-      );
-      const joinRequest = joinRequests.find((jr) => jr.wa_id === wa_id);
+      const approved_join_requests = [];
+      const failed_join_requests = [];
 
-      if (!joinRequest) {
-        return sendErrorResponse(
-          res,
-          HTTP_STATUS.NOT_FOUND,
-          ERROR_MESSAGES.JOIN_REQUEST_NOT_FOUND
+      for (const wa_id of join_requests) {
+        // Check if join request exists
+        const joinRequests = await getJoinRequests(
+          req.redisManager,
+          phone_number_id,
+          group_id
         );
-      }
+        const joinRequest = joinRequests.find((jr) => jr.wa_id === wa_id);
 
-      // Check if adding participant would exceed limit
-      if (group.participants.length >= MAX_PARTICIPANTS) {
-        return sendErrorResponse(
-          res,
-          HTTP_STATUS.BAD_REQUEST,
-          ERROR_MESSAGES.MAX_PARTICIPANTS_EXCEEDED
-        );
-      }
+        if (joinRequest && group.participants.length < MAX_PARTICIPANTS) {
+          // Add participant
+          group.participants.push(wa_id);
+          group.participant_count = group.participants.length;
 
-      // Add participant
-      group.participants.push(wa_id);
-      group.participant_count = group.participants.length;
+          // Update group in Redis
+          await updateGroupInRedis(req.redisManager, phone_number_id, group);
 
-      // Update group in Redis
-      await updateGroupInRedis(req.redisManager, phone_number_id, group);
+          // Remove join request
+          await removeJoinRequest(req.redisManager, phone_number_id, group_id, wa_id);
 
-      // Remove join request
-      await removeJoinRequest(req.redisManager, phone_number_id, group_id, wa_id);
+          approved_join_requests.push(wa_id);
 
-      // Emit webhook
-      const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
-      await emitGroupParticipantsWebhook(
-        req.redisStreamManager,
-        phone_number_id,
-        group_id,
-        "participant_added",
-        wa_id,
-        wbaId
-      );
-
-      // Emit Socket.IO event
-      const io = require("../../../../utils/ws/SocketManager").getIO();
-      if (io) {
-        io.to(`group/${phone_number_id}`).emit("topic-data", {
-          topic: `group/${phone_number_id}`,
-          data: {
+          // Emit webhook
+          const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
+          await emitGroupParticipantsWebhook(
+            req.redisStreamManager,
+            phone_number_id,
             group_id,
-            action: "join_request_approved",
+            "group_participants_add",
             wa_id,
-          },
-          timestamp: new Date().toISOString(),
-        });
+            wbaId
+          );
+        } else {
+          failed_join_requests.push({
+            join_request_id: wa_id,
+            errors: [{ code: 131213, message: "Group join request does not exist or limit reached" }]
+          });
+        }
       }
 
       res.status(HTTP_STATUS.OK).json({
-        message: "Join request approved",
+        messaging_product: "whatsapp",
+        approved_join_requests,
+        ...(failed_join_requests.length > 0 ? { failed_join_requests } : {})
       });
     } catch (error) {
-      console.error("Error approving join request:", error);
+      console.error("Error approving join requests:", error);
       sendErrorResponse(
         res,
         HTTP_STATUS.INTERNAL_SERVER_ERROR,
@@ -930,11 +969,11 @@ router.post(
 );
 
 /**
- * POST /:phone_number_id/groups/:group_id/join_requests/:wa_id/reject
- * Reject a join request
+ * DELETE /:phone_number_id/groups/:group_id/join_requests
+ * Reject join requests
  */
-router.post(
-  "/:phone_number_id/groups/:group_id/join_requests/:wa_id/reject",
+router.delete(
+  "/:phone_number_id/groups/:group_id/join_requests",
   async (req, res) => {
     try {
       // Validate request
@@ -947,7 +986,8 @@ router.post(
         );
       }
 
-      const { phone_number_id, group_id, wa_id } = req.params;
+      const { phone_number_id, group_id } = req.params;
+      const { join_requests } = req.body;
 
       // Check if group exists
       const group = await getGroupFromRedis(
@@ -964,55 +1004,48 @@ router.post(
         );
       }
 
-      // Check if join request exists
-      const joinRequests = await getJoinRequests(
-        req.redisManager,
-        phone_number_id,
-        group_id
-      );
-      const joinRequest = joinRequests.find((jr) => jr.wa_id === wa_id);
+      const rejected_join_requests = [];
+      const failed_join_requests = [];
 
-      if (!joinRequest) {
-        return sendErrorResponse(
-          res,
-          HTTP_STATUS.NOT_FOUND,
-          ERROR_MESSAGES.JOIN_REQUEST_NOT_FOUND
+      for (const wa_id of join_requests) {
+        // Check if join request exists
+        const joinRequests = await getJoinRequests(
+          req.redisManager,
+          phone_number_id,
+          group_id
         );
-      }
+        const joinRequest = joinRequests.find((jr) => jr.wa_id === wa_id);
 
-      // Remove join request
-      await removeJoinRequest(req.redisManager, phone_number_id, group_id, wa_id);
+        if (joinRequest) {
+          // Remove join request
+          await removeJoinRequest(req.redisManager, phone_number_id, group_id, wa_id);
+          rejected_join_requests.push(wa_id);
 
-      // Emit webhook
-      const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
-      await emitGroupParticipantsWebhook(
-        req.redisStreamManager,
-        phone_number_id,
-        group_id,
-        "join_request_rejected",
-        wa_id,
-        wbaId
-      );
-
-      // Emit Socket.IO event
-      const io = require("../../../../utils/ws/SocketManager").getIO();
-      if (io) {
-        io.to(`group/${phone_number_id}`).emit("topic-data", {
-          topic: `group/${phone_number_id}`,
-          data: {
+          // Emit webhook (Revoked/Rejected)
+          const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
+          await emitGroupParticipantsWebhook(
+            req.redisStreamManager,
+            phone_number_id,
             group_id,
-            action: "join_request_rejected",
+            "group_join_request_revoked",
             wa_id,
-          },
-          timestamp: new Date().toISOString(),
-        });
+            wbaId
+          );
+        } else {
+          failed_join_requests.push({
+            join_request_id: wa_id,
+            errors: [{ code: 131213, message: "Group join request does not exist" }]
+          });
+        }
       }
 
       res.status(HTTP_STATUS.OK).json({
-        message: "Join request rejected",
+        messaging_product: "whatsapp",
+        rejected_join_requests,
+        ...(failed_join_requests.length > 0 ? { failed_join_requests } : {})
       });
     } catch (error) {
-      console.error("Error rejecting join request:", error);
+      console.error("Error rejecting join requests:", error);
       sendErrorResponse(
         res,
         HTTP_STATUS.INTERNAL_SERVER_ERROR,
@@ -1110,6 +1143,63 @@ router.get("/:phone_number_id/participant/:wa_id/groups", async (req, res) => {
       ERROR_MESSAGES.INTERNAL_SERVER_ERROR
     );
   }
+});
+
+// --- Top-level Group Routes (Aliased) ---
+
+/**
+ * GET /:group_id
+ * Get group info
+ */
+router.get("/:group_id", async (req, res, next) => {
+  const { group_id } = req.params;
+  if (!group_id.endsWith("@g.us")) return next();
+  
+  if (!req.params.phone_number_id) {
+    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+  }
+
+  try {
+    const { phone_number_id } = req.params;
+    const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
+    if (!group) return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+    res.status(HTTP_STATUS.OK).json(formatGroupResponse(group));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /:group_id
+ * Update group settings
+ */
+router.post("/:group_id", async (req, res, next) => {
+  const { group_id } = req.params;
+  if (!group_id.endsWith("@g.us")) return next();
+
+  if (!req.params.phone_number_id) {
+    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+  }
+  
+  // Reuse existing update logic (this is a simplified alias)
+  req.url = `/${req.params.phone_number_id}/groups/${group_id}`;
+  next("route"); // Re-route to the standard handler
+});
+
+/**
+ * DELETE /:group_id
+ * Delete a group
+ */
+router.delete("/:group_id", async (req, res, next) => {
+  const { group_id } = req.params;
+  if (!group_id.endsWith("@g.us")) return next();
+
+  if (!req.params.phone_number_id) {
+    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+  }
+  
+  req.url = `/${req.params.phone_number_id}/groups/${group_id}`;
+  next("route");
 });
 
 module.exports = router;

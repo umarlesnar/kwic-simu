@@ -73,7 +73,7 @@ function isValidPhoneNumber(phoneNumber) {
  * @returns {boolean} True if valid, false otherwise
  */
 function isValidJoinApprovalMode(mode) {
-  return mode === "on_approval" || mode === "off";
+  return mode === "approval_required" || mode === "auto_approve";
 }
 
 /**

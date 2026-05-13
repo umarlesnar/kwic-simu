@@ -42,19 +42,19 @@ async function emitGroupLifecycleWebhook(
                   phone_number_id: phoneNumberId,
                   display_phone_number: phoneNumberId,
                 },
-                group_lifecycle_update: {
-                  event_type: eventType,
-                  group_id: groupId,
-                  timestamp,
-                  group_data: {
+                groups: [
+                  {
+                    timestamp,
+                    group_id: groupId,
+                    type: eventType, // e.g., group_create, group_delete
                     subject: groupData.subject,
                     description: groupData.description,
                     join_approval_mode: groupData.join_approval_mode,
-                    participant_count: groupData.participant_count,
+                    invite_link: groupData.invite_link,
                   },
-                },
+                ],
               },
-              field: "groups",
+              field: "group_lifecycle_update",
             },
           ],
         },
@@ -103,14 +103,16 @@ async function emitGroupParticipantsWebhook(
                   phone_number_id: phoneNumberId,
                   display_phone_number: phoneNumberId,
                 },
-                group_participants_update: {
-                  action,
-                  group_id: groupId,
-                  wa_id: waId,
-                  timestamp,
-                },
+                groups: [
+                  {
+                    timestamp,
+                    group_id: groupId,
+                    type: action, // e.g., group_participants_add, group_participants_remove
+                    wa_id: waId,
+                  },
+                ],
               },
-              field: "groups",
+              field: "group_participants_update",
             },
           ],
         },
@@ -159,14 +161,19 @@ async function emitGroupSettingsWebhook(
                   phone_number_id: phoneNumberId,
                   display_phone_number: phoneNumberId,
                 },
-                group_settings_update: {
-                  field,
-                  group_id: groupId,
-                  new_value: newValue,
-                  timestamp,
-                },
+                groups: [
+                  {
+                    timestamp,
+                    group_id: groupId,
+                    type: "group_settings_update",
+                    [field === "subject" ? "group_subject" : field === "description" ? "group_description" : field]: {
+                      text: newValue,
+                      update_successful: true,
+                    },
+                  },
+                ],
               },
-              field: "groups",
+              field: "group_settings_update",
             },
           ],
         },

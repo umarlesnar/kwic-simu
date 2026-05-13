@@ -202,6 +202,8 @@ router.use((req, res, next) => {
   next();
 });
 
+router.use("/", groupsRouter);
+
 router.post("/:dynamic_value/conversational_automation", (req, res) => {
   const valueType = identifyType(req.params.dynamic_value);
   if (valueType === "phone_number_id") {
@@ -737,72 +739,77 @@ router.post("/:dynamic_value/messages", async (req, res) => {
     }
 
     const msg_id = "wamid." + generateUniqueId();
+    const isGroupMessage = body.recipient_type === "group" || (body.to && body.to.endsWith("@g.us"));
+    const recipient_id = body.to;
 
-    // Check if number should return error or custom status
-    const customStatusConfig = getCustomStatusConfig(body.to);
-    if (customStatusConfig && customStatusConfig.status === "failed") {
-      // Send failed webhook
-      const failedWebhook = {
-        object: "whatsapp_business_account",
-        entry: [
-          {
-            id: wba_id,
-            changes: [
-              {
-                value: {
-                  messaging_product: "whatsapp",
-                  metadata: {
-                    display_phone_number: dynamic_value,
-                    phone_number_id: dynamic_value,
-                  },
-                  statuses: [
-                    {
-                      id: msg_id,
-                      status: "failed",
-                      timestamp: Math.floor(Date.now() / 1000).toString(),
-                      recipient_id: body.to,
-                      errors: customStatusConfig.errors,
+    // Check if number should return error or custom status (for non-group messages)
+    let customStatusConfig;
+    if (!isGroupMessage) {
+      customStatusConfig = getCustomStatusConfig(body.to);
+      if (customStatusConfig && customStatusConfig.status === "failed") {
+        // Send failed webhook
+        const failedWebhook = {
+          object: "whatsapp_business_account",
+          entry: [
+            {
+              id: wba_id,
+              changes: [
+                {
+                  value: {
+                    messaging_product: "whatsapp",
+                    metadata: {
+                      display_phone_number: dynamic_value,
+                      phone_number_id: dynamic_value,
                     },
-                  ],
+                    statuses: [
+                      {
+                        id: msg_id,
+                        status: "failed",
+                        timestamp: Math.floor(Date.now() / 1000).toString(),
+                        recipient_id: body.to,
+                        errors: customStatusConfig.errors,
+                      },
+                    ],
+                  },
+                  field: "messages",
                 },
-                field: "messages",
-              },
-            ],
-          },
-        ],
-      };
+              ],
+            },
+          ],
+        };
 
-      try {
-        await req.redisStreamManager.sendMessage({
-          type: "WEBHOOK",
-          payload: failedWebhook,
-        });
-      } catch (error) {
-        console.log("Error sending failed webhook:", error);
+        try {
+          await req.redisStreamManager.sendMessage({
+            type: "WEBHOOK",
+            payload: failedWebhook,
+          });
+        } catch (error) {
+          console.log("Error sending failed webhook:", error);
+        }
+
+        const errorResponse = {
+          messaging_product: "whatsapp",
+          contacts: [
+            {
+              input: body.to,
+              wa_id: body.to,
+            },
+          ],
+          messages: [
+            {
+              id: msg_id,
+              message_status: "failed",
+              errors: customStatusConfig.errors,
+            },
+          ],
+        };
+        return res.json(errorResponse);
       }
-
-      const errorResponse = {
-        messaging_product: "whatsapp",
-        contacts: [
-          {
-            input: body.to,
-            wa_id: body.to,
-          },
-        ],
-        messages: [
-          {
-            id: msg_id,
-            message_status: "failed",
-            errors: customStatusConfig.errors,
-          },
-        ],
-      };
-      return res.json(errorResponse);
     }
 
     const data = {
       messaging_product: "whatsapp",
-      contacts: [
+      contacts: isGroupMessage ? [] : [
         {
           input: body.to,
           wa_id: body.to,
@@ -815,24 +822,26 @@ router.post("/:dynamic_value/messages", async (req, res) => {
       ],
     };
 
-    // Check key exists or not
-    // `wb:${wba_id}:${phone_number_id}:client:${wa_id}`
-    const client = await req.redisManager.getValuesByPattern(
-      `wb:*:${dynamic_value}:client:${body.to}`,
-    );
+    // For groups, we might want to skip client registration or use a different key
+    if (!isGroupMessage) {
+      // `wb:${wba_id}:${phone_number_id}:client:${wa_id}`
+      const client = await req.redisManager.getValuesByPattern(
+        `wb:*:${dynamic_value}:client:${body.to}`,
+      );
 
-    if (client.length === 0) {
-      // TODO Register Client first
-      const key = `wb:${wba_id}:${dynamic_value}:client:${body.to}`;
-      const value = {
-        wa_id: body.to,
-        phone_number_id: dynamic_value,
-        profile: {
-          name: "Testing",
-        },
-        created_at: new Date().toISOString(),
-      };
-      await req.redisManager.putByKey(key, value, -1);
+      if (client.length === 0) {
+        // TODO Register Client first
+        const key = `wb:${wba_id}:${dynamic_value}:client:${body.to}`;
+        const value = {
+          wa_id: body.to,
+          phone_number_id: dynamic_value,
+          profile: {
+            name: "Testing",
+          },
+          created_at: new Date().toISOString(),
+        };
+        await req.redisManager.putByKey(key, value, -1);
+      }
     }
     const conversation_window_hours = process.env.CONVERSATION_WINDOW || 24;
     // Generate Expireed timestamp future 24 hours
@@ -903,12 +912,28 @@ router.post("/:dynamic_value/messages", async (req, res) => {
 
     if (body.type === "template" && body.template) {
       message_value.template = { ...body.template };
+      // Check for group_id in button parameters
+      const buttonComponent = body.template.components?.find(c => c.type === "button");
+      if (buttonComponent && buttonComponent.parameters?.some(p => p.type === "group_id")) {
+        message_value.contains_group_invite = true;
+      }
+    }
+
+    if (body.type === "pin" && body.pin) {
+      const { message_id, action } = body.pin;
+      message_value.pin_update = {
+        target_message_id: message_id,
+        action: action, // pin or unpin
+        status: "success"
+      };
     }
 
     await req.redisManager.putByKey(messaage_key, message_value);
     try {
       const io = getIO();
-      const topic = `message/whatsapp/${body.to}`;
+      const topic = isGroupMessage
+        ? `group/${body.to}`
+        : `message/whatsapp/${body.to}`;
       io.to(topic).emit("topic-data", {
         topic,
         data: message_value,
@@ -975,7 +1000,9 @@ router.post("/:dynamic_value/messages", async (req, res) => {
               // Emit socket event
               try {
                 const io = getIO();
-                const topic = `message/whatsapp/${body.to}`;
+                const topic = isGroupMessage
+                  ? `group/${body.to}`
+                  : `message/whatsapp/${body.to}`;
                 io.to(topic).emit("topic-data", {
                   topic,
                   data: message,
@@ -2766,7 +2793,5 @@ router.delete("/:dynamic_value/message_qrdls/:qr_code_id", async (req, res) => {
   res.json({ success: true });
 });
 
-// Register Groups API routes
-router.use("/", groupsRouter);
 
 module.exports = router;

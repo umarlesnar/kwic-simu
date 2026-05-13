@@ -15,8 +15,8 @@ const GROUP_ID_SUFFIX = "@g.us";
 
 // Join approval modes
 const JOIN_APPROVAL_MODES = {
-  ON_APPROVAL: "on_approval",
-  OFF: "off",
+  APPROVAL_REQUIRED: "approval_required",
+  AUTO_APPROVE: "auto_approve",
 };
 
 // Redis key patterns
@@ -29,22 +29,28 @@ const REDIS_KEY_PATTERNS = {
     `group:${phoneNumberId}:${groupId}:join_requests`,
   GROUP_INVITE_LINK: (phoneNumberId, groupId) =>
     `group:${phoneNumberId}:${groupId}:invite_link`,
+  GLOBAL_GROUP_MAP: (groupId) => `group_map:${groupId}`,
 };
 
 // Webhook event types
 const WEBHOOK_EVENT_TYPES = {
-  GROUP_CREATED: "group_created",
-  GROUP_UPDATED: "group_updated",
-  GROUP_DELETED: "group_deleted",
+  GROUP_CREATE: "group_create",
+  GROUP_DELETE: "group_delete",
+  GROUP_PARTICIPANTS_ADD: "group_participants_add",
+  GROUP_PARTICIPANTS_REMOVE: "group_participants_remove",
+  GROUP_JOIN_REQUEST_CREATED: "group_join_request_created",
+  GROUP_JOIN_REQUEST_REVOKED: "group_join_request_revoked",
+  GROUP_SETTINGS_UPDATE: "group_settings_update",
+  GROUP_SUSPEND: "group_suspend",
+  GROUP_SUSPEND_CLEARED: "group_suspend_cleared",
 };
 
 // Participant action types
 const PARTICIPANT_ACTIONS = {
-  PARTICIPANT_ADDED: "participant_added",
-  PARTICIPANT_REMOVED: "participant_removed",
-  JOIN_REQUEST_RECEIVED: "join_request_received",
-  JOIN_REQUEST_APPROVED: "join_request_approved",
-  JOIN_REQUEST_REJECTED: "join_request_rejected",
+  GROUP_PARTICIPANTS_ADD: "group_participants_add",
+  GROUP_PARTICIPANTS_REMOVE: "group_participants_remove",
+  GROUP_JOIN_REQUEST_CREATED: "group_join_request_created",
+  GROUP_JOIN_REQUEST_REVOKED: "group_join_request_revoked",
 };
 
 // Settings update field types

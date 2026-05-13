@@ -13,7 +13,7 @@ function GroupsTable({
   const handleDelete = async (groupId) => {
     if (window.confirm("Are you sure you want to delete this group?")) {
       try {
-        await axios.delete(`/v14.0/${phone_number_id}/groups/${groupId}`, {
+        await axios.delete(`/v14.0/${groupId}`, {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
           },
@@ -76,17 +76,17 @@ function GroupsTable({
                     {group.description || "-"}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                    {group.participant_count || 0}
+                    {group.total_participant_count || 0}
                   </td>
                   <td className="px-6 py-4 text-sm">
                     <span
                       className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        group.join_approval_mode === "on_approval"
+                        group.join_approval_mode === "approval_required"
                           ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
                           : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
                       }`}
                     >
-                      {group.join_approval_mode === "on_approval"
+                      {group.join_approval_mode === "approval_required"
                         ? "Approval"
                         : "Open"}
                     </span>

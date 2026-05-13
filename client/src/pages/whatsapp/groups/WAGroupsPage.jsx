@@ -56,17 +56,17 @@ function WAGroupsPage() {
 
   // Handle real-time updates
   const handleRealtimeUpdate = (data) => {
-    if (data.event === "deleted") {
+    if (data.type === "group_delete") {
       // Remove deleted group
       setGroups((prev) =>
-        prev.filter((g) => g.id !== data.id)
+        prev.filter((g) => g.id !== data.group_id)
       );
-    } else if (data.action === "participants_added" || data.action === "participant_removed") {
+    } else if (data.type === "group_participants_add" || data.type === "group_participants_remove") {
       // Update group participants
       setGroups((prev) =>
         prev.map((g) =>
           g.id === data.group_id
-            ? { ...g, participant_count: data.participant_count || g.participant_count }
+            ? { ...g, total_participant_count: data.total_participant_count || g.total_participant_count }
             : g
         )
       );
@@ -114,7 +114,7 @@ function WAGroupsPage() {
   const fetchGroupDetails = async (groupId) => {
     try {
       const response = await axios.get(
-        `/v14.0/${phone_number_id}/groups/${groupId}`,
+        `/v14.0/${groupId}`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,

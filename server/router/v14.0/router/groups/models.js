@@ -18,7 +18,7 @@ function createGroup(data) {
     phone_number_id: data.phone_number_id,
     subject: data.subject,
     description: data.description || "",
-    join_approval_mode: data.join_approval_mode || "off",
+    join_approval_mode: data.join_approval_mode || "auto_approve",
     participants: data.participants || [],
     participant_count: (data.participants || []).length,
     invite_link: data.invite_link || "",
@@ -120,16 +120,17 @@ function calculateInviteLinkExpiration() {
  */
 function formatGroupResponse(group) {
   return {
+    messaging_product: "whatsapp",
     id: group.id,
     subject: group.subject,
     description: group.description,
     join_approval_mode: group.join_approval_mode,
-    participants: group.participants,
-    participant_count: group.participant_count,
-    invite_link: group.invite_link,
-    invite_link_expiration: group.invite_link_expiration,
-    created_at: group.created_at,
-    updated_at: group.updated_at,
+    participants: group.participants.map(p => ({
+      wa_id: typeof p === 'string' ? p : p.wa_id
+    })),
+    total_participant_count: group.participant_count - 1, // Excluding the business according to docs
+    creation_timestamp: Math.floor(new Date(group.created_at).getTime() / 1000),
+    suspended: group.suspended || false,
   };
 }
 
@@ -143,8 +144,9 @@ function formatGroupListResponse(group) {
     id: group.id,
     subject: group.subject,
     description: group.description,
-    participant_count: group.participant_count,
-    created_at: group.created_at,
+    join_approval_mode: group.join_approval_mode,
+    total_participant_count: (group.participant_count || 1) - 1,
+    created_at: Math.floor(new Date(group.created_at).getTime() / 1000).toString(),
   };
 }
 

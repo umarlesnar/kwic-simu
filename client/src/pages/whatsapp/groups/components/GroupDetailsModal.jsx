@@ -30,7 +30,7 @@ function GroupDetailsModal({
   const fetchJoinRequests = async () => {
     try {
       const response = await axios.get(
-        `/v14.0/${phone_number_id}/groups/${group.id}/join_requests`,
+        `/v14.0/${group.id}/join_requests`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
@@ -46,7 +46,7 @@ function GroupDetailsModal({
   const fetchInviteLink = async () => {
     try {
       const response = await axios.get(
-        `/v14.0/${phone_number_id}/groups/${group.id}/invite_link`,
+        `/v14.0/${group.id}/invite_link`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
@@ -65,9 +65,12 @@ function GroupDetailsModal({
 
     try {
       setLoading(true);
-      const response = await axios.put(
-        `/v14.0/${phone_number_id}/groups/${group.id}`,
-        editData,
+      const response = await axios.post(
+        `/v14.0/${group.id}`,
+        {
+          messaging_product: "whatsapp",
+          ...editData
+        },
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
@@ -91,7 +94,10 @@ function GroupDetailsModal({
       setLoading(true);
       await axios.post(
         `/v14.0/${phone_number_id}/groups/${group.id}/participants`,
-        { phone_numbers: [newParticipant.trim()] },
+        { 
+          messaging_product: "whatsapp",
+          phone_numbers: [newParticipant.trim()] 
+        },
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
@@ -102,7 +108,7 @@ function GroupDetailsModal({
       setShowAddParticipant(false);
       // Refresh group data
       const response = await axios.get(
-        `/v14.0/${phone_number_id}/groups/${group.id}`,
+        `/v14.0/${group.id}`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
@@ -124,8 +130,12 @@ function GroupDetailsModal({
     try {
       setLoading(true);
       await axios.delete(
-        `/v14.0/${phone_number_id}/groups/${group.id}/participants/${waId}`,
+        `/v14.0/${group.id}/participants`,
         {
+          data: {
+            messaging_product: "whatsapp",
+            participants: [waId]
+          },
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
           },
@@ -133,7 +143,7 @@ function GroupDetailsModal({
       );
       // Refresh group data
       const response = await axios.get(
-        `/v14.0/${phone_number_id}/groups/${group.id}`,
+        `/v14.0/${group.id}`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
@@ -153,8 +163,11 @@ function GroupDetailsModal({
     try {
       setLoading(true);
       await axios.post(
-        `/v14.0/${phone_number_id}/groups/${group.id}/join_requests/${waId}/approve`,
-        {},
+        `/v14.0/${group.id}/join_requests`,
+        {
+          messaging_product: "whatsapp",
+          join_requests: [waId]
+        },
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
@@ -164,7 +177,7 @@ function GroupDetailsModal({
       fetchJoinRequests();
       // Refresh group data
       const response = await axios.get(
-        `/v14.0/${phone_number_id}/groups/${group.id}`,
+        `/v14.0/${group.id}`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
@@ -183,10 +196,13 @@ function GroupDetailsModal({
   const handleRejectJoinRequest = async (waId) => {
     try {
       setLoading(true);
-      await axios.post(
-        `/v14.0/${phone_number_id}/groups/${group.id}/join_requests/${waId}/reject`,
-        {},
+      await axios.delete(
+        `/v14.0/${group.id}/join_requests`,
         {
+          data: {
+            messaging_product: "whatsapp",
+            join_requests: [waId]
+          },
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
           },
@@ -205,7 +221,7 @@ function GroupDetailsModal({
     try {
       setLoading(true);
       const response = await axios.post(
-        `/v14.0/${phone_number_id}/groups/${group.id}/invite_link/reset`,
+        `/v14.0/${group.id}/invite_link`,
         {},
         {
           headers: {
@@ -227,7 +243,7 @@ function GroupDetailsModal({
 
     try {
       setLoading(true);
-      await axios.delete(`/v14.0/${phone_number_id}/groups/${group.id}`, {
+      await axios.delete(`/v14.0/${group.id}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
         },
@@ -337,9 +353,9 @@ function GroupDetailsModal({
                 <div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">Join Mode</p>
                   <p className="text-gray-900 dark:text-white">
-                    {group.join_approval_mode === "on_approval"
+                    {group.join_approval_mode === "approval_required"
                       ? "Approval Required"
-                      : "Open"}
+                      : "Auto Approve"}
                   </p>
                 </div>
                 <div>
@@ -362,7 +378,7 @@ function GroupDetailsModal({
           <div>
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Participants ({group.participant_count || 0}/8)
+                Participants ({group.total_participant_count || 0}/8)
               </h3>
               <button
                 onClick={() => setShowAddParticipant(!showAddParticipant)}
@@ -419,7 +435,7 @@ function GroupDetailsModal({
           </div>
 
           {/* Join Requests */}
-          {group.join_approval_mode === "on_approval" && (
+          {group.join_approval_mode === "approval_required" && (
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
                 Join Requests ({joinRequests.length})

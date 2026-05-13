@@ -28,12 +28,17 @@ function validateCreateGroupRequest(req) {
   }
 
   // Validate required fields
-  const requiredFields = ["subject", "join_approval_mode"];
+  const requiredFields = ["messaging_product", "subject"];
   const validation = validateRequiredFields(req.body, requiredFields);
   if (!validation.isValid) {
     errors.push(
       `Missing required fields: ${validation.missingFields.join(", ")}`
     );
+  }
+
+  // Validate messaging_product
+  if (req.body.messaging_product && req.body.messaging_product !== "whatsapp") {
+    errors.push('messaging_product must be "whatsapp"');
   }
 
   // Validate subject
@@ -49,10 +54,10 @@ function validateCreateGroupRequest(req) {
   // Validate join_approval_mode
   if (
     req.body.join_approval_mode &&
-    !isValidJoinApprovalMode(req.body.join_approval_mode)
+    !["approval_required", "auto_approve"].includes(req.body.join_approval_mode)
   ) {
     errors.push(
-      'join_approval_mode must be "on_approval" or "off"'
+      'join_approval_mode must be "approval_required" or "auto_approve"'
     );
   }
 
@@ -139,10 +144,10 @@ function validateUpdateGroupRequest(req) {
   // Validate join_approval_mode if provided
   if (
     req.body.join_approval_mode &&
-    !isValidJoinApprovalMode(req.body.join_approval_mode)
+    !["approval_required", "auto_approve"].includes(req.body.join_approval_mode)
   ) {
     errors.push(
-      'join_approval_mode must be "on_approval" or "off"'
+      'join_approval_mode must be "approval_required" or "auto_approve"'
     );
   }
 

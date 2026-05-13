@@ -4,10 +4,10 @@ import axios from "axios";
 
 function GroupCreationForm({ phone_number_id, onClose, onGroupCreated }) {
   const [formData, setFormData] = useState({
+    messaging_product: "whatsapp",
     subject: "",
     description: "",
-    join_approval_mode: "off",
-    participant_phone_numbers: [],
+    join_approval_mode: "auto_approve",
   });
   const [participantInput, setParticipantInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -75,7 +75,7 @@ function GroupCreationForm({ phone_number_id, onClose, onGroupCreated }) {
 
       // Fetch the created group details
       const groupResponse = await axios.get(
-        `/v14.0/${phone_number_id}/groups/${response.data.group_id}`,
+        `/v14.0/${response.data.id}`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
@@ -159,62 +159,16 @@ function GroupCreationForm({ phone_number_id, onClose, onGroupCreated }) {
               onChange={handleInputChange}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="off">Open (no approval needed)</option>
-              <option value="on_approval">Approval Required</option>
+              <option value="auto_approve">Auto Approve (Open)</option>
+              <option value="approval_required">Approval Required</option>
             </select>
           </div>
 
-          {/* Participants */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Add Participants (Max 7)
-            </label>
-            {/* <p className="text-xs text-gray-500 mb-2">Note: The business phone ({phone_number_id}) will be added as the first participant.</p> */}
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                value={participantInput}
-                onChange={(e) => setParticipantInput(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAddParticipant();
-                  }
-                }}
-                placeholder="Phone number"
-                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                type="button"
-                onClick={handleAddParticipant}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Add
-              </button>
-            </div>
-
-            {/* Participants List */}
-            {formData.participant_phone_numbers.length > 0 && (
-              <div className="space-y-2">
-                {formData.participant_phone_numbers.map((phone, index) => (
-                  <div
-                    key={index}
-                    className="flex justify-between items-center p-2 bg-gray-100 dark:bg-gray-700 rounded"
-                  >
-                    <span className="text-sm text-gray-900 dark:text-white">
-                      {phone}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveParticipant(index)}
-                      className="text-red-600 hover:text-red-700 text-sm"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+          {/* Participants Notice */}
+          <div className="p-3 bg-blue-50 dark:bg-gray-700 rounded-lg border border-blue-100 dark:border-gray-600">
+            <p className="text-sm text-blue-800 dark:text-blue-300">
+              Note: Participants cannot be added during creation. Share the invite link after the group is created.
+            </p>
           </div>
 
           {/* Buttons */}

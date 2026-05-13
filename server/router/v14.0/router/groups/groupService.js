@@ -11,7 +11,6 @@ const {
 
 const {
   createGroup,
-  createParticipant,
   createJoinRequest,
   createInviteLink,
   generateInviteLinkUrl,
@@ -52,6 +51,10 @@ async function createGroupInRedis(redisManagerWrapper, phoneNumberId, groupData)
     // Add to group index
     const indexKey = REDIS_KEY_PATTERNS.GROUP_INDEX(phoneNumberId);
     await redisManager.sadd(indexKey, group.id);
+
+    // Add to global group map
+    const globalMapKey = REDIS_KEY_PATTERNS.GLOBAL_GROUP_MAP(group.id);
+    await redisManager.set(globalMapKey, phoneNumberId);
 
     // Store invite link with TTL
     const inviteLinkKey = REDIS_KEY_PATTERNS.GROUP_INVITE_LINK(
@@ -146,6 +149,10 @@ async function deleteGroupFromRedis(redisManagerWrapper, phoneNumberId, groupId)
 
     // Remove from index
     await redisManager.srem(indexKey, groupId);
+
+    // Remove from global group map
+    const globalMapKey = REDIS_KEY_PATTERNS.GLOBAL_GROUP_MAP(groupId);
+    await redisManager.del(globalMapKey);
 
     return true;
   } catch (error) {
@@ -497,6 +504,23 @@ async function findGroupsByParticipant(redisManagerWrapper, phoneNumberId, waId)
   }
 }
 
+/**
+ * Finds the phone number ID for a given group ID
+ * @param {object} redisManagerWrapper - Redis manager wrapper instance
+ * @param {string} groupId - Group ID
+ * @returns {string|null} Phone number ID or null if not found
+ */
+async function getPhoneNumberIdByGroupId(redisManagerWrapper, groupId) {
+  try {
+    const redisManager = await redisManagerWrapper.getClient();
+    const globalMapKey = REDIS_KEY_PATTERNS.GLOBAL_GROUP_MAP(groupId);
+    return await redisManager.get(globalMapKey);
+  } catch (error) {
+    console.error("Error finding phone number for group:", error);
+    return null;
+  }
+}
+
 module.exports = {
   createGroupInRedis,
   getGroupFromRedis,
@@ -511,4 +535,5 @@ module.exports = {
   getInviteLink,
   resetInviteLink,
   findGroupsByParticipant,
+  getPhoneNumberIdByGroupId,
 };
