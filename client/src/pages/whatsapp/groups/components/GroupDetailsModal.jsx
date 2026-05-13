@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { MdClose, MdDelete, MdAdd } from "react-icons/md";
+import { MdClose, MdDelete, MdAdd, MdInfo, MdPeople, MdPersonAdd, MdSettings, MdPlayArrow } from "react-icons/md";
 import axios from "axios";
 
 function GroupDetailsModal({
@@ -9,17 +9,18 @@ function GroupDetailsModal({
   onGroupUpdated,
   onGroupDeleted,
 }) {
-  const [editMode, setEditMode] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
   const [editData, setEditData] = useState({
     subject: group.subject,
     description: group.description,
+    join_approval_mode: group.join_approval_mode,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [newParticipant, setNewParticipant] = useState("");
   const [joinRequests, setJoinRequests] = useState([]);
   const [inviteLink, setInviteLink] = useState(null);
-  const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const [simulationWaId, setSimulationWaId] = useState("");
 
   // Fetch join requests and invite link
   useEffect(() => {
@@ -60,7 +61,7 @@ function GroupDetailsModal({
   };
 
   const handleUpdateGroup = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setError(null);
 
     try {
@@ -78,7 +79,7 @@ function GroupDetailsModal({
         }
       );
       onGroupUpdated(response.data);
-      setEditMode(false);
+      setError(null);
     } catch (err) {
       console.error("Error updating group:", err);
       setError(err.response?.data?.error || "Failed to update group");
@@ -105,17 +106,7 @@ function GroupDetailsModal({
         }
       );
       setNewParticipant("");
-      setShowAddParticipant(false);
-      // Refresh group data
-      const response = await axios.get(
-        `/v14.0/${group.id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
-          },
-        }
-      );
-      onGroupUpdated(response.data);
+      refreshGroup();
     } catch (err) {
       console.error("Error adding participant:", err);
       setError(err.response?.data?.error || "Failed to add participant");
@@ -141,16 +132,7 @@ function GroupDetailsModal({
           },
         }
       );
-      // Refresh group data
-      const response = await axios.get(
-        `/v14.0/${group.id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
-          },
-        }
-      );
-      onGroupUpdated(response.data);
+      refreshGroup();
     } catch (err) {
       console.error("Error removing participant:", err);
       setError(err.response?.data?.error || "Failed to remove participant");
@@ -175,16 +157,7 @@ function GroupDetailsModal({
         }
       );
       fetchJoinRequests();
-      // Refresh group data
-      const response = await axios.get(
-        `/v14.0/${group.id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
-          },
-        }
-      );
-      onGroupUpdated(response.data);
+      refreshGroup();
     } catch (err) {
       console.error("Error approving join request:", err);
       setError(err.response?.data?.error || "Failed to approve join request");
@@ -214,6 +187,47 @@ function GroupDetailsModal({
       setError(err.response?.data?.error || "Failed to reject join request");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSimulateJoinRequest = async () => {
+    if (!simulationWaId.trim()) return;
+
+    try {
+      setLoading(true);
+      await axios.post(
+        `/v14.0/${phone_number_id}/groups/${group.id}/simulate_join_request`,
+        { wa_id: simulationWaId.trim() },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+          },
+        }
+      );
+      setSimulationWaId("");
+      fetchJoinRequests();
+      alert("Simulation join request sent!");
+    } catch (err) {
+      console.error("Error simulating join request:", err);
+      setError(err.response?.data?.error || "Failed to simulate join request");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshGroup = async () => {
+    try {
+      const response = await axios.get(
+        `/v14.0/${group.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token") || "test_token"}`,
+          },
+        }
+      );
+      onGroupUpdated(response.data);
+    } catch (err) {
+      console.error("Error refreshing group:", err);
     }
   };
 
@@ -262,40 +276,168 @@ function GroupDetailsModal({
     return new Date(dateString).toLocaleString();
   };
 
+  const tabs = [
+    { id: "overview", label: "Overview", icon: <MdInfo /> },
+    { id: "participants", label: "Participants", icon: <MdPeople /> },
+    { id: "settings", label: "Settings", icon: <MdSettings /> },
+  ];
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-2xl w-full mx-4 my-8">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 h-[600px] flex flex-col">
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-            Group Details
-          </h2>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+              {group.subject}
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {group.id}
+            </p>
+          </div>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
           >
             <MdClose className="text-2xl" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6 max-h-96 overflow-y-auto">
+        {/* Tab Navigation */}
+        <div className="flex border-b border-gray-200 dark:border-gray-700 px-6 overflow-x-auto">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 py-4 px-4 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+                activeTab === tab.id
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab Content */}
+        <div className="flex-1 overflow-y-auto p-6">
           {error && (
-            <div className="p-3 bg-red-100 text-red-700 rounded-lg text-sm">
-              {error}
+            <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm flex justify-between items-center">
+              <span>{error}</span>
+              <button onClick={() => setError(null)} className="text-red-900 dark:text-red-400 font-bold">×</button>
             </div>
           )}
 
-          {/* Group Info */}
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-              Group Information
-            </h3>
-            {editMode ? (
-              <form onSubmit={handleUpdateGroup} className="space-y-3">
+          {activeTab === "overview" && (
+            <div className="space-y-6">
+              <section>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Description</h3>
+                <p className="text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                  {group.description || "No description provided."}
+                </p>
+              </section>
+
+              <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">Join Approval Mode</p>
+                  <p className="text-gray-900 dark:text-white font-medium">
+                    {group.join_approval_mode === "approval_required" ? "Approval Required" : "Auto Approve"}
+                  </p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">Created At</p>
+                  <p className="text-gray-900 dark:text-white font-medium">{formatDate(group.created_at)}</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">Participants</p>
+                  <p className="text-gray-900 dark:text-white font-medium">{group.total_participant_count || 0} Members</p>
+                </div>
+              </section>
+
+              {inviteLink && (
+                <section>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Invite Link</h3>
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800">
+                    <p className="text-sm text-blue-800 dark:text-blue-300 break-all mb-2 font-mono">
+                      {inviteLink.invite_link}
+                    </p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-blue-600 dark:text-blue-400">
+                        Expires: {formatDate(new Date(inviteLink.expiration_timestamp * 1000))}
+                      </span>
+                      <button
+                        onClick={handleResetInviteLink}
+                        disabled={loading}
+                        className="text-xs font-bold text-blue-700 dark:text-blue-400 hover:underline"
+                      >
+                        Reset Link
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+
+          {activeTab === "participants" && (
+            <div className="space-y-6">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newParticipant}
+                  onChange={(e) => setNewParticipant(e.target.value)}
+                  placeholder="Enter phone number (e.g. 919876543210)"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={handleAddParticipant}
+                  disabled={loading || !newParticipant.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <MdAdd /> Add
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase">Member List</h4>
+                {group.participants && group.participants.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {group.participants.map((participant) => (
+                      <div
+                        key={participant}
+                        className="flex justify-between items-center p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm"
+                      >
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {participant}
+                        </span>
+                        <button
+                          onClick={() => handleRemoveParticipant(participant)}
+                          disabled={loading}
+                          className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                          title="Remove Participant"
+                        >
+                          <MdDelete className="text-lg" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400 italic">
+                    No participants yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "settings" && (
+            <form onSubmit={handleUpdateGroup} className="space-y-6">
+              <div className="space-y-4 bg-gray-50 dark:bg-gray-700/30 p-6 rounded-xl border border-gray-200 dark:border-gray-600">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Subject
+                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    Group Subject
                   </label>
                   <input
                     type="text"
@@ -303,12 +445,12 @@ function GroupDetailsModal({
                     onChange={(e) =>
                       setEditData({ ...editData, subject: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Description
+                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    Group Description
                   </label>
                   <textarea
                     value={editData.description}
@@ -316,214 +458,68 @@ function GroupDetailsModal({
                       setEditData({ ...editData, description: e.target.value })
                     }
                     rows="3"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditMode(false)}
-                    className="px-3 py-1 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded hover:bg-gray-400"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="space-y-2">
                 <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Subject</p>
-                  <p className="text-gray-900 dark:text-white font-medium">
-                    {group.subject}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Description</p>
-                  <p className="text-gray-900 dark:text-white">
-                    {group.description || "-"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Join Mode</p>
-                  <p className="text-gray-900 dark:text-white">
-                    {group.join_approval_mode === "approval_required"
-                      ? "Approval Required"
-                      : "Auto Approve"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Created</p>
-                  <p className="text-gray-900 dark:text-white">
-                    {formatDate(group.created_at)}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setEditMode(true)}
-                  className="mt-2 px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  Edit
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Participants */}
-          <div>
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Participants ({group.total_participant_count || 0}/8)
-              </h3>
-              <button
-                onClick={() => setShowAddParticipant(!showAddParticipant)}
-                className="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-gray-700 rounded"
-              >
-                <MdAdd className="text-xl" />
-              </button>
-            </div>
-
-            {showAddParticipant && (
-              <div className="flex gap-2 mb-3">
-                <input
-                  type="text"
-                  value={newParticipant}
-                  onChange={(e) => setNewParticipant(e.target.value)}
-                  placeholder="Phone number"
-                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  onClick={handleAddParticipant}
-                  disabled={loading}
-                  className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                >
-                  Add
-                </button>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              {group.participants && group.participants.length > 0 ? (
-                group.participants.map((participant) => (
-                  <div
-                    key={participant}
-                    className="flex justify-between items-center p-2 bg-gray-100 dark:bg-gray-700 rounded"
-                  >
-                    <span className="text-sm text-gray-900 dark:text-white">
-                      {participant}
-                    </span>
-                    <button
-                      onClick={() => handleRemoveParticipant(participant)}
-                      disabled={loading}
-                      className="text-red-600 hover:text-red-700 text-sm disabled:opacity-50"
-                    >
-                      Remove
-                    </button>
+                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                    Join Approval Mode
+                  </label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="join_approval_mode"
+                        value="auto_approve"
+                        checked={editData.join_approval_mode === "auto_approve"}
+                        onChange={(e) => setEditData({ ...editData, join_approval_mode: e.target.value })}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Auto Approve</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="join_approval_mode"
+                        value="approval_required"
+                        checked={editData.join_approval_mode === "approval_required"}
+                        onChange={(e) => setEditData({ ...editData, join_approval_mode: e.target.value })}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Approval Required</span>
+                    </label>
                   </div>
-                ))
-              ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  No participants
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Join Requests */}
-          {group.join_approval_mode === "approval_required" && (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-                Join Requests ({joinRequests.length})
-              </h3>
-              <div className="space-y-2">
-                {joinRequests.length > 0 ? (
-                  joinRequests.map((request) => (
-                    <div
-                      key={request.wa_id}
-                      className="flex justify-between items-center p-2 bg-yellow-50 dark:bg-gray-700 rounded"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">
-                          {request.wa_id}
-                        </p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400">
-                          {formatDate(request.requested_at)}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleApproveJoinRequest(request.wa_id)}
-                          disabled={loading}
-                          className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleRejectJoinRequest(request.wa_id)}
-                          disabled={loading}
-                          className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    No pending requests
-                  </p>
-                )}
+                </div>
               </div>
-            </div>
-          )}
 
-          {/* Invite Link */}
-          {inviteLink && (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-                Invite Link
-              </h3>
-              <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded">
-                <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
-                  Link
-                </p>
-                <p className="text-sm text-gray-900 dark:text-white break-all mb-2">
-                  {inviteLink.invite_link}
-                </p>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-                  Expires: {formatDate(new Date(inviteLink.expiration_timestamp * 1000))}
-                </p>
+              <div className="flex justify-between items-center">
                 <button
-                  onClick={handleResetInviteLink}
+                  type="submit"
                   disabled={loading}
-                  className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+                  className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-md"
                 >
-                  Reset Link
+                  {loading ? "Saving..." : "Save Changes"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteGroup}
+                  disabled={loading}
+                  className="px-4 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg font-medium transition-colors flex items-center gap-2"
+                >
+                  <MdDelete /> Delete Group
                 </button>
               </div>
-            </div>
+            </form>
           )}
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex gap-3">
-          <button
-            onClick={handleDeleteGroup}
-            disabled={loading}
-            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-          >
-            <MdDelete /> Delete Group
-          </button>
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex justify-end">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="px-6 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 font-bold transition-colors"
           >
-            Close
+            Done
           </button>
         </div>
       </div>

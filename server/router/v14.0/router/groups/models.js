@@ -90,9 +90,13 @@ function generateGroupIdBase() {
  * @returns {string} Invite link URL
  */
 function generateInviteLinkUrl(phoneNumberId, groupId) {
-  const baseUrl = process.env.PUBLIC_BASE_URL || "http://localhost:3000";
   const linkToken = generateInviteLinkToken();
-  return `${baseUrl}/groups/${phoneNumberId}/${groupId}/join/${linkToken}`;
+  // Meta Groups API returns a WhatsApp invite link in this format.
+  // The simulator only needs the shape; the link isn't meant to be "clickable" locally.
+  return {
+    link: `https://chat.whatsapp.com/${linkToken}`,
+    token: linkToken,
+  };
 }
 
 /**

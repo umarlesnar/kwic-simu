@@ -9,6 +9,11 @@ const geoip = require("geoip-lite");
 const { body, validationResult } = require("express-validator");
 const { getIO } = require("../../utils/ws/SocketManager");
 const groupsRouter = require("../v14.0/router/groups");
+const { validateJoinGroupByInviteLinkRequest } = require("../v14.0/router/groups/groupValidator");
+const { joinGroupByInviteLink } = require("../v14.0/router/groups/groupService");
+const { sendErrorResponse } = require("../v14.0/router/groups/errorHandler");
+const { HTTP_STATUS, ERROR_MESSAGES } = require("../v14.0/router/groups/constants");
+const { emitGroupParticipantsWebhook } = require("../v14.0/router/groups/groupWebhooks");
 
 ApiRouter.use("/", groupsRouter);
 
@@ -1527,6 +1532,87 @@ ApiRouter.get("/:dynamic_value/flow_responses", async (req, res) => {
   } catch (error) {
     console.log("Error fetching flow responses:", error);
     return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+/**
+ * POST /groups/join
+ * Join a group via invite link
+ */
+ApiRouter.post("/groups/join", async (req, res) => {
+  try {
+    const validation = validateJoinGroupByInviteLinkRequest(req);
+    if (!validation.isValid) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, validation.errors[0]);
+    }
+
+    const { invite_link, wa_id } = req.body;
+    const result = await joinGroupByInviteLink(req.redisManager, invite_link, wa_id);
+
+    if (!result.success) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, result.error);
+    }
+
+    if (result.status === "joined") {
+      // Emit webhooks
+      const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
+      await emitGroupParticipantsWebhook(
+        req.redisStreamManager,
+        result.phone_number_id,
+        result.group_id,
+        "group_participants_add",
+        wa_id,
+        wbaId
+      );
+
+      // Emit Socket.IO event
+      const io = require("../../../../utils/ws/SocketManager").getIO();
+      if (io) {
+        io.to(`group/${result.phone_number_id}`).emit("topic-data", {
+          topic: `group/${result.phone_number_id}`,
+          data: {
+            group_id: result.group_id,
+            action: "participants_added",
+            participants: [wa_id],
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } else if (result.status === "request_pending") {
+      // Emit webhook
+      const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
+      await emitGroupParticipantsWebhook(
+        req.redisStreamManager,
+        result.phone_number_id,
+        result.group_id,
+        "group_join_request_created",
+        wa_id,
+        wbaId
+      );
+
+      // Emit Socket.IO event
+      const io = require("../../../../utils/ws/SocketManager").getIO();
+      if (io) {
+        io.to(`group/${result.phone_number_id}`).emit("topic-data", {
+          topic: `group/${result.phone_number_id}`,
+          data: {
+            group_id: result.group_id,
+            action: "join_request_received",
+            wa_id,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      status: result.status,
+      group_id: result.group_id,
+    });
+  } catch (error) {
+    console.error("Error joining group:", error);
+    sendErrorResponse(res, HTTP_STATUS.INTERNAL_SERVER_ERROR, ERROR_MESSAGES.INTERNAL_SERVER_ERROR);
   }
 });
 

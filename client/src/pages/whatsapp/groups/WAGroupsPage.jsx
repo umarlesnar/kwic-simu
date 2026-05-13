@@ -183,12 +183,14 @@ function WAGroupsPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Groups
           </h1>
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Create Group
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Create Group
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -224,6 +226,7 @@ function WAGroupsPage() {
           onGroupCreated={handleGroupCreated}
         />
       )}
+
 
       {/* Group Details Modal */}
       {showDetailsModal && selectedGroup && (

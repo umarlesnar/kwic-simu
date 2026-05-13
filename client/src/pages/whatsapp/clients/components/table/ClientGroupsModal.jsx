@@ -8,14 +8,18 @@ import {
   MdSend, 
   MdArrowBack, 
   MdAttachFile, 
-  MdInsertDriveFile 
+  MdInsertDriveFile,
+  MdGroupAdd,
+  MdPersonAdd,
+  MdCheck,
+  MdClose as MdCancel
 } from "react-icons/md";
 import { io } from "socket.io-client";
 import WBMessages from "@utils/WBMessages";
 import { WebhookService } from "@api/WebhookService";
 
 const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client }) => {
-  const [view, setView] = useState("list"); // 'list' or 'chat'
+  const [view, setView] = useState("list"); // 'list', 'chat', 'join', 'requests'
   const [groups, setGroups] = useState([]);
   const [activeGroup, setActiveGroup] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -24,6 +28,14 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
   const [messageInput, setMessageInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  
+  // Join Group State
+  const [inviteLink, setInviteLink] = useState("");
+  const [isJoining, setIsJoining] = useState(false);
+
+  // Join Requests State
+  const [joinRequests, setJoinRequests] = useState([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
   
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -42,7 +54,7 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
 
   // Socket.IO Setup
   useEffect(() => {
-    if (isOpen && activeGroup) {
+    if (isOpen && activeGroup && view === "chat") {
       const socket = io(window.location.origin, {
         path: "/socket.io",
       });
@@ -68,7 +80,7 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
         socket.disconnect();
       };
     }
-  }, [isOpen, activeGroup]);
+  }, [isOpen, activeGroup, view]);
 
   const fetchGroups = useCallback(async () => {
     if (!client?.wa_id) return;
@@ -95,6 +107,18 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
     }
   }, [phone_number_id]);
 
+  const fetchJoinRequests = useCallback(async (groupId) => {
+    try {
+      setRequestsLoading(true);
+      const response = await businessService.getGroupJoinRequests(groupId);
+      setJoinRequests(response.data || []);
+    } catch (err) {
+      toast.error("Failed to fetch join requests: " + err.message);
+    } finally {
+      setRequestsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (isOpen && view === "list") {
       fetchGroups();
@@ -111,6 +135,52 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
     setView("list");
     setActiveGroup(null);
     setMessages([]);
+    setJoinRequests([]);
+  };
+
+  const handleJoinGroup = async (e) => {
+    e?.preventDefault();
+    if (!inviteLink.trim() || isJoining) return;
+
+    try {
+      setIsJoining(true);
+      const response = await businessService.joinGroup(inviteLink.trim(), client.wa_id);
+      
+      if (response.status === "joined") {
+        toast.success("Successfully joined the group!");
+        setInviteLink("");
+        setView("list");
+        fetchGroups();
+      } else if (response.status === "request_pending") {
+        toast.info("Join request sent. Waiting for approval.");
+        setInviteLink("");
+        setView("list");
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to join group");
+    } finally {
+      setIsJoining(false);
+    }
+  };
+
+  const handleApproveRequest = async (waId) => {
+    try {
+      await businessService.approveJoinRequests(activeGroup.id, [waId]);
+      toast.success(`Approved ${waId}`);
+      fetchJoinRequests(activeGroup.id);
+    } catch (err) {
+      toast.error("Failed to approve: " + err.message);
+    }
+  };
+
+  const handleRejectRequest = async (waId) => {
+    try {
+      await businessService.rejectJoinRequests(activeGroup.id, [waId]);
+      toast.success(`Rejected ${waId}`);
+      fetchJoinRequests(activeGroup.id);
+    } catch (err) {
+      toast.error("Failed to reject: " + err.message);
+    }
   };
 
   const handleSendMessage = async (e) => {
@@ -202,7 +272,7 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
           <div className="flex items-center gap-3">
-            {view === "chat" && (
+            {view !== "list" && (
               <button 
                 onClick={handleBackToList}
                 className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors"
@@ -215,25 +285,52 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900 dark:text-white truncate max-w-[300px]">
-                {view === "chat" ? activeGroup.subject : "Client Groups"}
+                {view === "chat" ? activeGroup.subject : 
+                 view === "join" ? "Join New Group" :
+                 view === "requests" ? "Join Requests" : "Client Groups"}
               </h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                {view === "chat" ? `${activeGroup.participant_count} participants` : `${client?.profile?.name || client?.wa_id}'s groups`}
+                {view === "chat" ? `${activeGroup.participant_count} participants` : 
+                 view === "requests" ? activeGroup?.subject :
+                 `${client?.profile?.name || client?.wa_id}'s groups`}
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-          >
-            <MdClose className="text-2xl" />
-          </button>
+          <div className="flex items-center gap-2">
+            {view === "list" && (
+              <button
+                onClick={() => setView("join")}
+                className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              >
+                <MdGroupAdd className="text-lg" />
+                Join Group
+              </button>
+            )}
+            {view === "chat" && (
+              <button
+                onClick={() => {
+                  setView("requests");
+                  fetchJoinRequests(activeGroup.id);
+                }}
+                className="flex items-center gap-2 px-3 py-1.5 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 transition-colors shadow-sm"
+              >
+                <MdPersonAdd className="text-lg" />
+                Requests
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors ml-2"
+            >
+              <MdClose className="text-2xl" />
+            </button>
+          </div>
         </div>
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden flex flex-col relative bg-gray-50 dark:bg-gray-900/50">
           
-          {view === "list" ? (
+          {view === "list" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {loading ? (
                 <div className="flex flex-col items-center justify-center py-20">
@@ -244,6 +341,12 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
                 <div className="text-center py-20">
                   <MdGroups className="text-6xl text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500 font-medium">No group memberships found</p>
+                  <button
+                    onClick={() => setView("join")}
+                    className="mt-4 px-4 py-2 text-blue-600 font-bold hover:underline"
+                  >
+                    Join a group using invite link
+                  </button>
                 </div>
               ) : (
                 groups.map((group) => (
@@ -265,7 +368,105 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client })
                 ))
               )}
             </div>
-          ) : (
+          )}
+
+          {view === "join" && (
+            <div className="flex-1 p-6">
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 max-w-md mx-auto mt-10">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Enter Group Invite Link</h3>
+                <form onSubmit={handleJoinGroup} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Invite Link
+                    </label>
+                    <input
+                      type="text"
+                      value={inviteLink}
+                      onChange={(e) => setInviteLink(e.target.value)}
+                      placeholder="https://chat.whatsapp.com/..."
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                      required
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      type="submit"
+                      disabled={isJoining || !inviteLink.trim()}
+                      className="flex-1 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    >
+                      {isJoining ? "Joining..." : "Join Group"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setView("list")}
+                      className="px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+                <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+                  <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
+                    <strong>Note:</strong> If the group has manual approval enabled, your request will be sent to the group admins for review.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {view === "requests" && (
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {requestsLoading ? (
+                <div className="flex justify-center py-20">
+                  <ImSpinner11 className="text-4xl text-blue-600 animate-spin" />
+                </div>
+              ) : joinRequests.length === 0 ? (
+                <div className="text-center py-20">
+                  <MdPersonAdd className="text-6xl text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 font-medium">No pending join requests</p>
+                  <button
+                    onClick={() => setView("chat")}
+                    className="mt-4 text-blue-600 hover:underline text-sm font-bold"
+                  >
+                    Back to Chat
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Pending Approval</h3>
+                  {joinRequests.map((request) => (
+                    <div 
+                      key={request.wa_id}
+                      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 flex justify-between items-center shadow-sm"
+                    >
+                      <div>
+                        <p className="font-bold text-gray-900 dark:text-white">{request.wa_id}</p>
+                        <p className="text-[10px] text-gray-500 mt-0.5">Requested: {new Date(request.requested_at).toLocaleString()}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleApproveRequest(request.wa_id)}
+                          className="p-2 bg-green-100 text-green-600 hover:bg-green-600 hover:text-white rounded-lg transition-all"
+                          title="Approve"
+                        >
+                          <MdCheck className="text-xl" />
+                        </button>
+                        <button
+                          onClick={() => handleRejectRequest(request.wa_id)}
+                          className="p-2 bg-red-100 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-all"
+                          title="Reject"
+                        >
+                          <MdCancel className="text-xl" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {view === "chat" && (
             <>
               {/* Chat Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">

@@ -30,6 +30,7 @@ const REDIS_KEY_PATTERNS = {
   GROUP_INVITE_LINK: (phoneNumberId, groupId) =>
     `group:${phoneNumberId}:${groupId}:invite_link`,
   GLOBAL_GROUP_MAP: (groupId) => `group_map:${groupId}`,
+  GLOBAL_INVITE_LINK_MAP: (token) => `invite_link_map:${token}`,
 };
 
 // Webhook event types

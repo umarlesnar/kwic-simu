@@ -39,9 +39,9 @@ async function createGroupInRedis(redisManagerWrapper, phoneNumberId, groupData)
     });
 
     // Generate invite link
-    const inviteLinkUrl = generateInviteLinkUrl(phoneNumberId, group.id);
+    const inviteInfo = generateInviteLinkUrl(phoneNumberId, group.id);
     const expirationTimestamp = calculateInviteLinkExpiration();
-    group.invite_link = inviteLinkUrl;
+    group.invite_link = inviteInfo.link;
     group.invite_link_expiration = expirationTimestamp;
 
     // Store group in Redis
@@ -61,11 +61,19 @@ async function createGroupInRedis(redisManagerWrapper, phoneNumberId, groupData)
       phoneNumberId,
       group.id
     );
-    const inviteLink = createInviteLink(group.id, inviteLinkUrl, expirationTimestamp);
+    const inviteLink = createInviteLink(group.id, inviteInfo.link, expirationTimestamp);
     await redisManager.setex(
       inviteLinkKey,
       INVITE_LINK_TTL,
       JSON.stringify(inviteLink)
+    );
+
+    // Store token to group mapping
+    const tokenKey = REDIS_KEY_PATTERNS.GLOBAL_INVITE_LINK_MAP(inviteInfo.token);
+    await redisManager.setex(
+      tokenKey,
+      INVITE_LINK_TTL,
+      JSON.stringify({ group_id: group.id, phone_number_id: phoneNumberId })
     );
 
     return group;
@@ -442,9 +450,9 @@ async function getInviteLink(redisManagerWrapper, phoneNumberId, groupId) {
 async function resetInviteLink(redisManagerWrapper, phoneNumberId, groupId) {
   try {
     const redisManager = await redisManagerWrapper.getClient();
-    const inviteLinkUrl = generateInviteLinkUrl(phoneNumberId, groupId);
+    const inviteInfo = generateInviteLinkUrl(phoneNumberId, groupId);
     const expirationTimestamp = calculateInviteLinkExpiration();
-    const inviteLink = createInviteLink(groupId, inviteLinkUrl, expirationTimestamp);
+    const inviteLink = createInviteLink(groupId, inviteInfo.link, expirationTimestamp);
 
     const inviteLinkKey = REDIS_KEY_PATTERNS.GROUP_INVITE_LINK(
       phoneNumberId,
@@ -456,6 +464,14 @@ async function resetInviteLink(redisManagerWrapper, phoneNumberId, groupId) {
       inviteLinkKey,
       INVITE_LINK_TTL,
       JSON.stringify(inviteLink)
+    );
+
+    // Store token to group mapping
+    const tokenKey = REDIS_KEY_PATTERNS.GLOBAL_INVITE_LINK_MAP(inviteInfo.token);
+    await redisManager.setex(
+      tokenKey,
+      INVITE_LINK_TTL,
+      JSON.stringify({ group_id: groupId, phone_number_id: phoneNumberId })
     );
 
     return inviteLink;
@@ -536,4 +552,63 @@ module.exports = {
   resetInviteLink,
   findGroupsByParticipant,
   getPhoneNumberIdByGroupId,
+  joinGroupByInviteLink: async (redisManagerWrapper, inviteLinkUrl, waId) => {
+    try {
+      const redisManager = await redisManagerWrapper.getClient();
+      
+      // Extract token from URL
+      const urlParts = inviteLinkUrl.split('/');
+      const token = urlParts[urlParts.length - 1];
+      
+      const tokenKey = REDIS_KEY_PATTERNS.GLOBAL_INVITE_LINK_MAP(token);
+      const mappingData = await redisManager.get(tokenKey);
+      
+      if (!mappingData) {
+        return { success: false, error: "Invalid or expired invite link" };
+      }
+      
+      const { group_id, phone_number_id } = JSON.parse(mappingData);
+      const groupKey = REDIS_KEY_PATTERNS.GROUP(phone_number_id, group_id);
+      const groupData = await redisManager.get(groupKey);
+      
+      if (!groupData) {
+        return { success: false, error: "Group not found" };
+      }
+      
+      const group = JSON.parse(groupData);
+      
+      // Check if user already in group
+      const existingWaIds = group.participants.map(p => typeof p === 'string' ? p : p.wa_id);
+      if (existingWaIds.includes(waId)) {
+        return { success: false, error: "User already in group", group_id };
+      }
+      
+      if (group.join_approval_mode === "auto_approve") {
+        // Add to group
+        group.participants.push(waId);
+        group.participant_count = group.participants.length;
+        await redisManager.set(groupKey, JSON.stringify(group));
+        return { success: true, status: "joined", group_id, group, phone_number_id };
+      } else {
+        // Add to join requests
+        const joinRequestsKey = REDIS_KEY_PATTERNS.GROUP_JOIN_REQUESTS(phone_number_id, group_id);
+        const existingRequestsData = await redisManager.get(joinRequestsKey);
+        const joinRequests = existingRequestsData ? JSON.parse(existingRequestsData) : [];
+        
+        if (!joinRequests.find(jr => jr.wa_id === waId)) {
+          joinRequests.push({
+            wa_id: waId,
+            requested_at: new Date().toISOString(),
+            status: "pending"
+          });
+          await redisManager.set(joinRequestsKey, JSON.stringify(joinRequests));
+        }
+        
+        return { success: true, status: "request_pending", group_id, phone_number_id };
+      }
+    } catch (error) {
+      console.error("Error joining group by invite link:", error);
+      throw error;
+    }
+  }
 };

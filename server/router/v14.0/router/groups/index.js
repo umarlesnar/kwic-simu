@@ -23,6 +23,7 @@ const {
   validateRejectJoinRequestRequest,
   validateSimulateJoinRequestRequest,
   validateListGroupsRequest,
+  validateJoinGroupByInviteLinkRequest,
 } = require("./groupValidator");
 
 const {
@@ -39,6 +40,7 @@ const {
   getInviteLink,
   resetInviteLink,
   findGroupsByParticipant,
+  joinGroupByInviteLink,
 } = require("./groupService");
 
 const {
@@ -74,6 +76,9 @@ router.use("/:group_id", async (req, res, next) => {
   const phoneNumberId = await getPhoneNumberIdByGroupId(req.redisManager, group_id);
   if (phoneNumberId) {
     req.params.phone_number_id = phoneNumberId;
+  } else if (req.user?.phone_number_id) {
+    // Fallback: use phone_number_id from token payload
+    req.params.phone_number_id = req.user.phone_number_id;
   } else {
     // If it looks like a group ID but we can't find the phone number ID,
     // we should still consider it a group request but it will likely 404 later.
@@ -246,23 +251,6 @@ router.get("/:phone_number_id/groups/:group_id", async (req, res) => {
       ERROR_MESSAGES.INTERNAL_SERVER_ERROR
     );
   }
-});
-
-/**
- * POST /:group_id
- * Update group settings
- */
-router.post("/:group_id", async (req, res) => {
-  try {
-    // Extract phone_number_id from request if possible, or use a default/lookup
-    // In a real API, the group_id is enough.
-    // For the simulator, we might need to find which phone_number_id owns this group.
-    // However, the current structure requires it.
-    // Let's assume we can lookup by group_id or it's passed in some header.
-    // For now, I'll keep the :phone_number_id prefix for internal routing but add the alias.
-    
-    // Alias handled below in a catch-all for :group_id
-  } catch (error) {}
 });
 
 /**
@@ -749,8 +737,8 @@ router.get("/:phone_number_id/groups/:group_id/join_requests", async (req, res) 
       );
     }
 
-    // If join_approval_mode is "off", return empty array
-    if (group.join_approval_mode === "off") {
+    // Only groups with approval_required have join requests
+    if (group.join_approval_mode !== "approval_required") {
       return res.status(HTTP_STATUS.OK).json({ data: [] });
     }
 
@@ -810,8 +798,8 @@ router.post(
         );
       }
 
-      // Check if join_approval_mode is "on_approval"
-      if (group.join_approval_mode !== "on_approval") {
+      // Join requests only apply to approval_required
+      if (group.join_approval_mode !== "approval_required") {
         return sendErrorResponse(
           res,
           HTTP_STATUS.BAD_REQUEST,
@@ -1055,69 +1043,10 @@ router.delete(
   }
 );
 
+
 module.exports = router;
 
 
-/**
- * POST /:phone_number_id/groups/test/generate
- * Generate test groups with sample data
- */
-router.post("/:phone_number_id/groups/test/generate", async (req, res) => {
-  try {
-    const { phone_number_id } = req.params;
-    const { count = 5 } = req.body;
-
-    const { generateTestGroups } = require("./testDataGenerator");
-
-    const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
-    const createdGroups = await generateTestGroups(
-      req.redisManager,
-      req.redisStreamManager,
-      phone_number_id,
-      wbaId,
-      count
-    );
-
-    res.status(HTTP_STATUS.OK).json({
-      message: `Generated ${createdGroups.length} test groups`,
-      groups: createdGroups.map((g) => ({
-        group_id: g.id,
-        subject: g.subject,
-        participant_count: g.participant_count,
-      })),
-    });
-  } catch (error) {
-    console.error("Error generating test groups:", error);
-    sendErrorResponse(
-      res,
-      HTTP_STATUS.INTERNAL_SERVER_ERROR,
-      ERROR_MESSAGES.INTERNAL_SERVER_ERROR
-    );
-  }
-});
-
-/**
- * GET /:phone_number_id/groups/export
- * Export all group data
- */
-router.get("/:phone_number_id/groups/export", async (req, res) => {
-  try {
-    const { phone_number_id } = req.params;
-
-    const { exportGroupData } = require("./testDataGenerator");
-
-    const exportedData = await exportGroupData(req.redisManager, phone_number_id);
-
-    res.status(HTTP_STATUS.OK).json(exportedData);
-  } catch (error) {
-    console.error("Error exporting group data:", error);
-    sendErrorResponse(
-      res,
-      HTTP_STATUS.INTERNAL_SERVER_ERROR,
-      ERROR_MESSAGES.INTERNAL_SERVER_ERROR
-    );
-  }
-});
 
 /**
  * GET /:phone_number_id/participant/:wa_id/groups
@@ -1155,12 +1084,15 @@ router.get("/:group_id", async (req, res, next) => {
   const { group_id } = req.params;
   if (!group_id.endsWith("@g.us")) return next();
   
-  if (!req.params.phone_number_id) {
+  const phone_number_id =
+    req.params.phone_number_id ||
+    (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
+    req.user?.phone_number_id;
+  if (!phone_number_id) {
     return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
   }
 
   try {
-    const { phone_number_id } = req.params;
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
     res.status(HTTP_STATUS.OK).json(formatGroupResponse(group));
@@ -1177,13 +1109,82 @@ router.post("/:group_id", async (req, res, next) => {
   const { group_id } = req.params;
   if (!group_id.endsWith("@g.us")) return next();
 
-  if (!req.params.phone_number_id) {
+  const phone_number_id =
+    req.params.phone_number_id ||
+    (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
+    req.user?.phone_number_id;
+  if (!phone_number_id) {
     return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
   }
-  
-  // Reuse existing update logic (this is a simplified alias)
-  req.url = `/${req.params.phone_number_id}/groups/${group_id}`;
-  next("route"); // Re-route to the standard handler
+
+  try {
+    const validation = validateUpdateGroupRequest({
+      ...req,
+      params: { phone_number_id, group_id },
+    });
+    if (!validation.isValid) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, validation.errors[0]);
+    }
+
+    const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
+    if (!group) {
+      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+    }
+
+    const { subject, description, join_approval_mode } = req.body;
+    const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
+
+    if (subject !== undefined) {
+      group.subject = subject;
+      await emitGroupSettingsWebhook(
+        req.redisStreamManager,
+        phone_number_id,
+        group_id,
+        "subject",
+        subject,
+        wbaId
+      );
+    }
+
+    if (description !== undefined) {
+      group.description = description;
+      await emitGroupSettingsWebhook(
+        req.redisStreamManager,
+        phone_number_id,
+        group_id,
+        "description",
+        description,
+        wbaId
+      );
+    }
+
+    if (join_approval_mode !== undefined) {
+      group.join_approval_mode = join_approval_mode;
+      await emitGroupSettingsWebhook(
+        req.redisStreamManager,
+        phone_number_id,
+        group_id,
+        "join_approval_mode",
+        join_approval_mode,
+        wbaId
+      );
+    }
+
+    const updatedGroup = await updateGroupInRedis(req.redisManager, phone_number_id, group);
+
+    const io = require("../../../../utils/ws/SocketManager").getIO();
+    if (io) {
+      io.to(`group/${phone_number_id}`).emit("topic-data", {
+        topic: `group/${phone_number_id}`,
+        data: updatedGroup,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    return res.status(HTTP_STATUS.OK).json(formatGroupResponse(updatedGroup));
+  } catch (e) {
+    return next(e);
+  }
 });
 
 /**
@@ -1194,12 +1195,334 @@ router.delete("/:group_id", async (req, res, next) => {
   const { group_id } = req.params;
   if (!group_id.endsWith("@g.us")) return next();
 
-  if (!req.params.phone_number_id) {
+  const phone_number_id =
+    req.params.phone_number_id ||
+    (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
+    req.user?.phone_number_id;
+  if (!phone_number_id) {
     return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
   }
-  
-  req.url = `/${req.params.phone_number_id}/groups/${group_id}`;
-  next("route");
+
+  try {
+    const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
+    if (!group) {
+      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+    }
+
+    await deleteGroupFromRedis(req.redisManager, phone_number_id, group_id);
+
+    const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
+    await emitGroupLifecycleWebhook(
+      req.redisStreamManager,
+      phone_number_id,
+      group_id,
+      "group_delete",
+      group,
+      wbaId
+    );
+
+    const io = require("../../../../utils/ws/SocketManager").getIO();
+    if (io) {
+      io.to(`group/${phone_number_id}`).emit("topic-data", {
+        topic: `group/${phone_number_id}`,
+        data: { id: group_id, event: "deleted" },
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    return res.status(HTTP_STATUS.OK).json({ message: "Group deleted successfully" });
+  } catch (e) {
+    return next(e);
+  }
+});
+
+/**
+ * GET /:group_id/invite_link
+ * Alias for Get group invite link
+ */
+router.get("/:group_id/invite_link", async (req, res, next) => {
+  const { group_id } = req.params;
+  if (!group_id.endsWith("@g.us")) return next();
+  const phone_number_id =
+    req.params.phone_number_id ||
+    (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
+    req.user?.phone_number_id;
+  if (!phone_number_id) {
+    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+  }
+
+  try {
+    const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
+    if (!group) {
+      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+    }
+    const inviteLink = await getInviteLink(req.redisManager, phone_number_id, group_id);
+    if (!inviteLink) {
+      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, "Invite link not found");
+    }
+    return res.status(HTTP_STATUS.OK).json({
+      invite_link: inviteLink.link,
+      expiration_timestamp: inviteLink.expiration_timestamp,
+    });
+  } catch (e) {
+    return next(e);
+  }
+});
+
+/**
+ * POST /:group_id/invite_link
+ * Alias for Reset invite link (Meta uses POST /<GROUP_ID>/invite_link)
+ */
+router.post("/:group_id/invite_link", async (req, res, next) => {
+  const { group_id } = req.params;
+  if (!group_id.endsWith("@g.us")) return next();
+  const phone_number_id =
+    req.params.phone_number_id ||
+    (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
+    req.user?.phone_number_id;
+  if (!phone_number_id) {
+    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+  }
+
+  try {
+    const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
+    if (!group) {
+      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+    }
+    const newInviteLink = await resetInviteLink(req.redisManager, phone_number_id, group_id);
+    return res.status(HTTP_STATUS.OK).json({
+      invite_link: newInviteLink.link,
+      expiration_timestamp: newInviteLink.expiration_timestamp,
+    });
+  } catch (e) {
+    return next(e);
+  }
+});
+
+/**
+ * GET /:group_id/join_requests
+ * Alias for Get join requests
+ */
+router.get("/:group_id/join_requests", async (req, res, next) => {
+  const { group_id } = req.params;
+  if (!group_id.endsWith("@g.us")) return next();
+  const phone_number_id =
+    req.params.phone_number_id ||
+    (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
+    req.user?.phone_number_id;
+  if (!phone_number_id) {
+    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+  }
+
+  try {
+    const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
+    if (!group) {
+      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+    }
+    if (group.join_approval_mode !== "approval_required") {
+      return res.status(HTTP_STATUS.OK).json({ data: [] });
+    }
+    const joinRequests = await getJoinRequests(req.redisManager, phone_number_id, group_id);
+    return res.status(HTTP_STATUS.OK).json({ data: joinRequests.map(formatJoinRequestResponse) });
+  } catch (e) {
+    return next(e);
+  }
+});
+
+/**
+ * POST /:group_id/join_requests
+ * Alias for Approve join requests
+ */
+router.post("/:group_id/join_requests", async (req, res, next) => {
+  const { group_id } = req.params;
+  if (!group_id.endsWith("@g.us")) return next();
+  const phone_number_id =
+    req.params.phone_number_id ||
+    (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
+    req.user?.phone_number_id;
+  if (!phone_number_id) {
+    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+  }
+
+  try {
+    // Reuse existing validator by shaping params
+    req.params.phone_number_id = phone_number_id;
+    req.params.group_id = group_id;
+    const validation = validateApproveJoinRequestRequest(req);
+    if (!validation.isValid) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, validation.errors[0]);
+    }
+
+    const { join_requests } = req.body;
+    const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
+    if (!group) {
+      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+    }
+
+    const approved_join_requests = [];
+    const failed_join_requests = [];
+
+    for (const wa_id of join_requests) {
+      const joinRequests = await getJoinRequests(req.redisManager, phone_number_id, group_id);
+      const joinRequest = joinRequests.find((jr) => jr.wa_id === wa_id);
+
+      if (joinRequest && group.participants.length < MAX_PARTICIPANTS) {
+        group.participants.push(wa_id);
+        group.participant_count = group.participants.length;
+        await updateGroupInRedis(req.redisManager, phone_number_id, group);
+        await removeJoinRequest(req.redisManager, phone_number_id, group_id, wa_id);
+        approved_join_requests.push(wa_id);
+
+        const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
+        await emitGroupParticipantsWebhook(
+          req.redisStreamManager,
+          phone_number_id,
+          group_id,
+          "group_participants_add",
+          wa_id,
+          wbaId
+        );
+      } else {
+        failed_join_requests.push({
+          join_request_id: wa_id,
+          errors: [{ code: 131213, message: "Group join request does not exist or limit reached" }],
+        });
+      }
+    }
+
+    return res.status(HTTP_STATUS.OK).json({
+      messaging_product: "whatsapp",
+      approved_join_requests,
+      ...(failed_join_requests.length > 0 ? { failed_join_requests } : {}),
+    });
+  } catch (e) {
+    return next(e);
+  }
+});
+
+/**
+ * DELETE /:group_id/join_requests
+ * Alias for Reject join requests
+ */
+router.delete("/:group_id/join_requests", async (req, res, next) => {
+  const { group_id } = req.params;
+  if (!group_id.endsWith("@g.us")) return next();
+  const phone_number_id =
+    req.params.phone_number_id ||
+    (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
+    req.user?.phone_number_id;
+  if (!phone_number_id) {
+    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+  }
+
+  try {
+    req.params.phone_number_id = phone_number_id;
+    req.params.group_id = group_id;
+    const validation = validateRejectJoinRequestRequest(req);
+    if (!validation.isValid) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, validation.errors[0]);
+    }
+
+    const { join_requests } = req.body;
+    const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
+    if (!group) {
+      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+    }
+
+    const rejected_join_requests = [];
+    const failed_join_requests = [];
+
+    for (const wa_id of join_requests) {
+      const joinRequests = await getJoinRequests(req.redisManager, phone_number_id, group_id);
+      const joinRequest = joinRequests.find((jr) => jr.wa_id === wa_id);
+
+      if (joinRequest) {
+        await removeJoinRequest(req.redisManager, phone_number_id, group_id, wa_id);
+        rejected_join_requests.push(wa_id);
+
+        const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
+        await emitGroupParticipantsWebhook(
+          req.redisStreamManager,
+          phone_number_id,
+          group_id,
+          "group_join_request_revoked",
+          wa_id,
+          wbaId
+        );
+      } else {
+        failed_join_requests.push({
+          join_request_id: wa_id,
+          errors: [{ code: 131213, message: "Group join request does not exist" }],
+        });
+      }
+    }
+
+    return res.status(HTTP_STATUS.OK).json({
+      messaging_product: "whatsapp",
+      rejected_join_requests,
+      ...(failed_join_requests.length > 0 ? { failed_join_requests } : {}),
+    });
+  } catch (e) {
+    return next(e);
+  }
+});
+
+/**
+ * DELETE /:group_id/participants
+ * Alias for Remove group participants
+ */
+router.delete("/:group_id/participants", async (req, res, next) => {
+  const { group_id } = req.params;
+  if (!group_id.endsWith("@g.us")) return next();
+  const phone_number_id =
+    req.params.phone_number_id ||
+    (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
+    req.user?.phone_number_id;
+  if (!phone_number_id) {
+    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+  }
+
+  try {
+    const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
+    if (!group) {
+      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+    }
+
+    const { participants } = req.body || {};
+    if (!Array.isArray(participants) || participants.length === 0) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, "participants must be a non-empty array");
+    }
+    const waIds = participants.map((p) => (typeof p === "string" ? p : (p.user || p.wa_id))).filter(Boolean);
+
+    const removed_participants = [];
+    const failed_participants = [];
+
+    for (const wa_id of waIds) {
+      const updatedGroup = await removeParticipantFromGroup(req.redisManager, phone_number_id, group, wa_id);
+      if (updatedGroup) {
+        removed_participants.push({ input: wa_id });
+        const wbaId = req.user?.whatsapp_business_account_id || "default_wba";
+        await emitGroupParticipantsWebhook(
+          req.redisStreamManager,
+          phone_number_id,
+          group_id,
+          "group_participants_remove",
+          wa_id,
+          wbaId
+        );
+      } else {
+        failed_participants.push({ input: wa_id });
+      }
+    }
+
+    return res.status(HTTP_STATUS.OK).json({
+      messaging_product: "whatsapp",
+      removed_participants,
+      ...(failed_participants.length > 0 ? { failed_participants } : {}),
+    });
+  } catch (e) {
+    return next(e);
+  }
 });
 
 module.exports = router;

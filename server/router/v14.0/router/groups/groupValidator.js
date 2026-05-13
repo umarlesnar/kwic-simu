@@ -229,8 +229,30 @@ function validateRemoveParticipantRequest(req) {
     errors.push("Invalid group_id format");
   }
 
-  if (!isValidPhoneNumber(req.params.wa_id)) {
-    errors.push("Invalid wa_id format");
+  // Two supported shapes:
+  // 1) Bulk remove via body.participants (Meta format)
+  // 2) Legacy remove via :wa_id path param (if ever added later)
+  if (req.params.wa_id !== undefined) {
+    if (!isValidPhoneNumber(req.params.wa_id)) {
+      errors.push("Invalid wa_id format");
+    }
+  } else {
+    const participants = req.body?.participants;
+    if (!Array.isArray(participants) || participants.length === 0) {
+      errors.push("participants must be a non-empty array");
+    } else {
+      const waIds = participants
+        .map((p) => (typeof p === "string" ? p : p.user || p.wa_id))
+        .filter(Boolean);
+      if (waIds.length === 0) {
+        errors.push("participants must include at least one valid user");
+      } else {
+        const invalid = waIds.filter((waId) => !isValidPhoneNumber(waId));
+        if (invalid.length > 0) {
+          errors.push("Invalid wa_id format in participants array");
+        }
+      }
+    }
   }
 
   return {
@@ -321,8 +343,24 @@ function validateApproveJoinRequestRequest(req) {
     errors.push("Invalid group_id format");
   }
 
-  if (!isValidPhoneNumber(req.params.wa_id)) {
-    errors.push("Invalid wa_id format");
+  const validation = validateRequiredFields(req.body, ["messaging_product", "join_requests"]);
+  if (!validation.isValid) {
+    errors.push(`Missing required fields: ${validation.missingFields.join(", ")}`);
+  }
+
+  if (req.body.messaging_product && req.body.messaging_product !== "whatsapp") {
+    errors.push('messaging_product must be "whatsapp"');
+  }
+
+  if (req.body.join_requests) {
+    if (!Array.isArray(req.body.join_requests) || req.body.join_requests.length === 0) {
+      errors.push("join_requests must be a non-empty array");
+    } else {
+      const invalid = req.body.join_requests.filter((waId) => !isValidPhoneNumber(waId));
+      if (invalid.length > 0) {
+        errors.push("Invalid wa_id format in join_requests array");
+      }
+    }
   }
 
   return {
@@ -347,8 +385,24 @@ function validateRejectJoinRequestRequest(req) {
     errors.push("Invalid group_id format");
   }
 
-  if (!isValidPhoneNumber(req.params.wa_id)) {
-    errors.push("Invalid wa_id format");
+  const validation = validateRequiredFields(req.body, ["messaging_product", "join_requests"]);
+  if (!validation.isValid) {
+    errors.push(`Missing required fields: ${validation.missingFields.join(", ")}`);
+  }
+
+  if (req.body.messaging_product && req.body.messaging_product !== "whatsapp") {
+    errors.push('messaging_product must be "whatsapp"');
+  }
+
+  if (req.body.join_requests) {
+    if (!Array.isArray(req.body.join_requests) || req.body.join_requests.length === 0) {
+      errors.push("join_requests must be a non-empty array");
+    } else {
+      const invalid = req.body.join_requests.filter((waId) => !isValidPhoneNumber(waId));
+      if (invalid.length > 0) {
+        errors.push("Invalid wa_id format in join_requests array");
+      }
+    }
   }
 
   return {
@@ -421,6 +475,33 @@ function validateListGroupsRequest(req) {
   };
 }
 
+/**
+ * Validates join group by invite link request
+ * @param {object} req - Express request object
+ * @returns {object} Validation result with isValid boolean and errors array
+ */
+function validateJoinGroupByInviteLinkRequest(req) {
+  const errors = [];
+
+  const validation = validateRequiredFields(req.body, ["invite_link", "wa_id"]);
+  if (!validation.isValid) {
+    errors.push(`Missing required fields: ${validation.missingFields.join(", ")}`);
+  }
+
+  if (req.body.wa_id && !isValidPhoneNumber(req.body.wa_id)) {
+    errors.push("Invalid wa_id format");
+  }
+
+  if (req.body.invite_link && typeof req.body.invite_link !== "string") {
+    errors.push("Invite link must be a string");
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+}
+
 module.exports = {
   validateCreateGroupRequest,
   validateGetGroupRequest,
@@ -435,4 +516,5 @@ module.exports = {
   validateRejectJoinRequestRequest,
   validateSimulateJoinRequestRequest,
   validateListGroupsRequest,
+  validateJoinGroupByInviteLinkRequest,
 };

@@ -258,4 +258,63 @@ export const businessService = {
       );
     }
   },
+
+  // Join a group via invite link
+  joinGroup: async (invite_link, wa_id) => {
+    try {
+      const response = await http.post("/groups/join", {
+        invite_link,
+        wa_id
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error || "Failed to join group"
+      );
+    }
+  },
+
+  // Get join requests for a group
+  getGroupJoinRequests: async (groupId) => {
+    try {
+      const response = await http.get(`/${groupId}/join_requests`);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error || "Failed to fetch join requests"
+      );
+    }
+  },
+
+  // Approve join requests
+  approveJoinRequests: async (groupId, waIds) => {
+    try {
+      const response = await http.post(`/${groupId}/join_requests`, {
+        messaging_product: "whatsapp",
+        join_requests: waIds
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error || "Failed to approve join requests"
+      );
+    }
+  },
+
+  // Reject join requests
+  rejectJoinRequests: async (groupId, waIds) => {
+    try {
+      const response = await http.delete(`/${groupId}/join_requests`, {
+        data: {
+          messaging_product: "whatsapp",
+          join_requests: waIds
+        }
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error || "Failed to reject join requests"
+      );
+    }
+  },
 };
