@@ -10,12 +10,14 @@ const { HTTP_STATUS, ERROR_MESSAGES } = require("./constants");
  * @param {string} message - Error message
  * @param {number} statusCode - HTTP status code
  * @param {string} details - Additional error details
+ * @param {number} whatsappCode - WhatsApp specific error code
  * @returns {object} Error response object
  */
-function createErrorResponse(message, statusCode, details = null) {
+function createErrorResponse(message, statusCode, details = null, whatsappCode = null) {
   const response = {
     error: message,
-    code: statusCode,
+    status: statusCode,
+    code: whatsappCode || statusCode, // Use whatsappCode if provided, else fallback to statusCode
   };
 
   if (details) {
@@ -31,9 +33,10 @@ function createErrorResponse(message, statusCode, details = null) {
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
  * @param {string} details - Additional error details
+ * @param {number} whatsappCode - WhatsApp specific error code
  */
-function sendErrorResponse(res, statusCode, message, details = null) {
-  const errorResponse = createErrorResponse(message, statusCode, details);
+function sendErrorResponse(res, statusCode, message, details = null, whatsappCode = null) {
+  const errorResponse = createErrorResponse(message, statusCode, details, whatsappCode);
   res.status(statusCode).json(errorResponse);
 }
 

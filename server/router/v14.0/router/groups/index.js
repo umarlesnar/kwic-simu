@@ -7,7 +7,7 @@ const express = require("express");
 const router = express.Router();
 
 const { sendErrorResponse } = require("./errorHandler");
-const { HTTP_STATUS, ERROR_MESSAGES, MAX_PARTICIPANTS } = require("./constants");
+const { HTTP_STATUS, ERROR_MESSAGES, MAX_PARTICIPANTS, GROUP_ERROR_CODES } = require("./constants");
 
 const {
   validateCreateGroupRequest,
@@ -121,7 +121,9 @@ router.post("/:phone_number_id/groups", async (req, res) => {
       return sendErrorResponse(
         res,
         HTTP_STATUS.BAD_REQUEST,
-        ERROR_MESSAGES.MAX_PARTICIPANTS_EXCEEDED
+        ERROR_MESSAGES[GROUP_ERROR_CODES.PARTICIPANT_OVERLIMIT],
+        null,
+        GROUP_ERROR_CODES.PARTICIPANT_OVERLIMIT
       );
     }
 
@@ -237,8 +239,10 @@ router.get("/:phone_number_id/groups/:group_id", async (req, res) => {
     if (!group) {
       return sendErrorResponse(
         res,
-        HTTP_STATUS.NOT_FOUND,
-        ERROR_MESSAGES.GROUP_NOT_FOUND
+        HTTP_STATUS.BAD_REQUEST, // Meta uses 400 for Group Unknown
+        ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+        null,
+        GROUP_ERROR_CODES.GROUP_UNKNOWN
       );
     }
 
@@ -278,8 +282,10 @@ router.post("/:phone_number_id/groups/:group_id", async (req, res) => {
     if (!group) {
       return sendErrorResponse(
         res,
-        HTTP_STATUS.NOT_FOUND,
-        ERROR_MESSAGES.GROUP_NOT_FOUND
+        HTTP_STATUS.BAD_REQUEST,
+        ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+        null,
+        GROUP_ERROR_CODES.GROUP_UNKNOWN
       );
     }
 
@@ -374,8 +380,10 @@ router.delete("/:phone_number_id/groups/:group_id", async (req, res) => {
     if (!group) {
       return sendErrorResponse(
         res,
-        HTTP_STATUS.NOT_FOUND,
-        ERROR_MESSAGES.GROUP_NOT_FOUND
+        HTTP_STATUS.BAD_REQUEST,
+        ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+        null,
+        GROUP_ERROR_CODES.GROUP_UNKNOWN
       );
     }
 
@@ -441,8 +449,10 @@ router.post("/:phone_number_id/groups/:group_id/participants", async (req, res) 
     if (!group) {
       return sendErrorResponse(
         res,
-        HTTP_STATUS.NOT_FOUND,
-        ERROR_MESSAGES.GROUP_NOT_FOUND
+        HTTP_STATUS.BAD_REQUEST,
+        ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+        null,
+        GROUP_ERROR_CODES.GROUP_UNKNOWN
       );
     }
 
@@ -451,7 +461,9 @@ router.post("/:phone_number_id/groups/:group_id/participants", async (req, res) 
       return sendErrorResponse(
         res,
         HTTP_STATUS.BAD_REQUEST,
-        ERROR_MESSAGES.MAX_PARTICIPANTS_EXCEEDED
+        ERROR_MESSAGES[GROUP_ERROR_CODES.PARTICIPANT_OVERLIMIT],
+        null,
+        GROUP_ERROR_CODES.PARTICIPANT_OVERLIMIT
       );
     }
 
@@ -815,7 +827,9 @@ router.post(
         return sendErrorResponse(
           res,
           HTTP_STATUS.BAD_REQUEST,
-          ERROR_MESSAGES.USER_ALREADY_IN_GROUP
+          ERROR_MESSAGES[GROUP_ERROR_CODES.DUPLICATE_PARTICIPANT],
+          null,
+          GROUP_ERROR_CODES.DUPLICATE_PARTICIPANT
         );
       }
 
@@ -935,7 +949,7 @@ router.post(
         } else {
           failed_join_requests.push({
             join_request_id: wa_id,
-            errors: [{ code: 131213, message: "Group join request does not exist or limit reached" }]
+            errors: [{ code: GROUP_ERROR_CODES.JOIN_REQUEST_NOT_FOUND, message: ERROR_MESSAGES[GROUP_ERROR_CODES.JOIN_REQUEST_NOT_FOUND] }]
           });
         }
       }
@@ -987,8 +1001,10 @@ router.delete(
       if (!group) {
         return sendErrorResponse(
           res,
-          HTTP_STATUS.NOT_FOUND,
-          ERROR_MESSAGES.GROUP_NOT_FOUND
+          HTTP_STATUS.BAD_REQUEST,
+          ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+          null,
+          GROUP_ERROR_CODES.GROUP_UNKNOWN
         );
       }
 
@@ -1022,7 +1038,7 @@ router.delete(
         } else {
           failed_join_requests.push({
             join_request_id: wa_id,
-            errors: [{ code: 131213, message: "Group join request does not exist" }]
+            errors: [{ code: GROUP_ERROR_CODES.JOIN_REQUEST_NOT_FOUND, message: ERROR_MESSAGES[GROUP_ERROR_CODES.JOIN_REQUEST_NOT_FOUND] }]
           });
         }
       }
@@ -1094,7 +1110,11 @@ router.get("/:group_id", async (req, res, next) => {
 
   try {
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
-    if (!group) return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+    if (!group) return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      error: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+      status: HTTP_STATUS.BAD_REQUEST,
+      code: GROUP_ERROR_CODES.GROUP_UNKNOWN
+    });
     res.status(HTTP_STATUS.OK).json(formatGroupResponse(group));
   } catch (error) {
     next(error);
@@ -1114,7 +1134,11 @@ router.post("/:group_id", async (req, res, next) => {
     (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
     req.user?.phone_number_id;
   if (!phone_number_id) {
-    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      error: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+      status: HTTP_STATUS.BAD_REQUEST,
+      code: GROUP_ERROR_CODES.GROUP_UNKNOWN
+    });
   }
 
   try {
@@ -1128,7 +1152,7 @@ router.post("/:group_id", async (req, res, next) => {
 
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
-      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
     }
 
     const { subject, description, join_approval_mode } = req.body;
@@ -1200,13 +1224,17 @@ router.delete("/:group_id", async (req, res, next) => {
     (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
     req.user?.phone_number_id;
   if (!phone_number_id) {
-    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      error: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+      status: HTTP_STATUS.BAD_REQUEST,
+      code: GROUP_ERROR_CODES.GROUP_UNKNOWN
+    });
   }
 
   try {
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
-      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
     }
 
     await deleteGroupFromRedis(req.redisManager, phone_number_id, group_id);
@@ -1248,13 +1276,17 @@ router.get("/:group_id/invite_link", async (req, res, next) => {
     (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
     req.user?.phone_number_id;
   if (!phone_number_id) {
-    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      error: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+      status: HTTP_STATUS.BAD_REQUEST,
+      code: GROUP_ERROR_CODES.GROUP_UNKNOWN
+    });
   }
 
   try {
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
-      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
     }
     const inviteLink = await getInviteLink(req.redisManager, phone_number_id, group_id);
     if (!inviteLink) {
@@ -1281,13 +1313,17 @@ router.post("/:group_id/invite_link", async (req, res, next) => {
     (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
     req.user?.phone_number_id;
   if (!phone_number_id) {
-    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      error: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+      status: HTTP_STATUS.BAD_REQUEST,
+      code: GROUP_ERROR_CODES.GROUP_UNKNOWN
+    });
   }
 
   try {
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
-      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
     }
     const newInviteLink = await resetInviteLink(req.redisManager, phone_number_id, group_id);
     return res.status(HTTP_STATUS.OK).json({
@@ -1311,13 +1347,17 @@ router.get("/:group_id/join_requests", async (req, res, next) => {
     (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
     req.user?.phone_number_id;
   if (!phone_number_id) {
-    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      error: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+      status: HTTP_STATUS.BAD_REQUEST,
+      code: GROUP_ERROR_CODES.GROUP_UNKNOWN
+    });
   }
 
   try {
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
-      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
     }
     if (group.join_approval_mode !== "approval_required") {
       return res.status(HTTP_STATUS.OK).json({ data: [] });
@@ -1341,7 +1381,11 @@ router.post("/:group_id/join_requests", async (req, res, next) => {
     (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
     req.user?.phone_number_id;
   if (!phone_number_id) {
-    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      error: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+      status: HTTP_STATUS.BAD_REQUEST,
+      code: GROUP_ERROR_CODES.GROUP_UNKNOWN
+    });
   }
 
   try {
@@ -1356,7 +1400,7 @@ router.post("/:group_id/join_requests", async (req, res, next) => {
     const { join_requests } = req.body;
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
-      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
     }
 
     const approved_join_requests = [];
@@ -1385,7 +1429,7 @@ router.post("/:group_id/join_requests", async (req, res, next) => {
       } else {
         failed_join_requests.push({
           join_request_id: wa_id,
-          errors: [{ code: 131213, message: "Group join request does not exist or limit reached" }],
+          errors: [{ code: GROUP_ERROR_CODES.JOIN_REQUEST_NOT_FOUND, message: ERROR_MESSAGES[GROUP_ERROR_CODES.JOIN_REQUEST_NOT_FOUND] }],
         });
       }
     }
@@ -1412,7 +1456,11 @@ router.delete("/:group_id/join_requests", async (req, res, next) => {
     (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
     req.user?.phone_number_id;
   if (!phone_number_id) {
-    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      error: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+      status: HTTP_STATUS.BAD_REQUEST,
+      code: GROUP_ERROR_CODES.GROUP_UNKNOWN
+    });
   }
 
   try {
@@ -1426,7 +1474,7 @@ router.delete("/:group_id/join_requests", async (req, res, next) => {
     const { join_requests } = req.body;
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
-      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
     }
 
     const rejected_join_requests = [];
@@ -1452,7 +1500,7 @@ router.delete("/:group_id/join_requests", async (req, res, next) => {
       } else {
         failed_join_requests.push({
           join_request_id: wa_id,
-          errors: [{ code: 131213, message: "Group join request does not exist" }],
+          errors: [{ code: GROUP_ERROR_CODES.JOIN_REQUEST_NOT_FOUND, message: ERROR_MESSAGES[GROUP_ERROR_CODES.JOIN_REQUEST_NOT_FOUND] }],
         });
       }
     }
@@ -1479,13 +1527,17 @@ router.delete("/:group_id/participants", async (req, res, next) => {
     (await getPhoneNumberIdByGroupId(req.redisManager, group_id)) ||
     req.user?.phone_number_id;
   if (!phone_number_id) {
-    return res.status(HTTP_STATUS.NOT_FOUND).json({ error: ERROR_MESSAGES.GROUP_NOT_FOUND });
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      error: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
+      status: HTTP_STATUS.BAD_REQUEST,
+      code: GROUP_ERROR_CODES.GROUP_UNKNOWN
+    });
   }
 
   try {
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
-      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, ERROR_MESSAGES.GROUP_NOT_FOUND);
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
     }
 
     const { participants } = req.body || {};
