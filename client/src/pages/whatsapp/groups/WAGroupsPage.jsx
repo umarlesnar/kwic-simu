@@ -213,6 +213,7 @@ function WAGroupsPage() {
               phone_number_id={phone_number_id}
               pagination={pagination}
               onPageChange={handlePageChange}
+              onRefresh={() => fetchGroups(pagination.limit, pagination.offset)}
             />
           </>
         )}

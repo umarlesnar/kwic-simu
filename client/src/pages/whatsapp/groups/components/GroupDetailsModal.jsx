@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { MdClose, MdDelete, MdAdd, MdInfo, MdPeople, MdPersonAdd, MdSettings, MdPlayArrow } from "react-icons/md";
+import {
+  MdClose,
+  MdDelete,
+  MdAdd,
+  MdInfo,
+  MdPeople,
+  MdPersonAdd,
+  MdSettings,
+  MdPlayArrow,
+  MdRefresh,
+  MdOutlineMessage,
+} from "react-icons/md";
 import axios from "axios";
 
 function GroupDetailsModal({
@@ -21,6 +32,7 @@ function GroupDetailsModal({
   const [joinRequests, setJoinRequests] = useState([]);
   const [inviteLink, setInviteLink] = useState(null);
 
+
   // Fetch join requests and invite link
   useEffect(() => {
     fetchJoinRequests();
@@ -29,14 +41,11 @@ function GroupDetailsModal({
 
   const fetchJoinRequests = async () => {
     try {
-      const response = await axios.get(
-        `/v14.0/${group.id}/join_requests`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-          },
-        }
-      );
+      const response = await axios.get(`/v14.0/${group.id}/join_requests`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
+        },
+      });
       setJoinRequests(response.data.data || []);
     } catch (err) {
       console.error("Error fetching join requests:", err);
@@ -45,14 +54,11 @@ function GroupDetailsModal({
 
   const fetchInviteLink = async () => {
     try {
-      const response = await axios.get(
-        `/v14.0/${group.id}/invite_link`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-          },
-        }
-      );
+      const response = await axios.get(`/v14.0/${group.id}/invite_link`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
+        },
+      });
       setInviteLink(response.data);
     } catch (err) {
       console.error("Error fetching invite link:", err);
@@ -69,13 +75,13 @@ function GroupDetailsModal({
         `/v14.0/${group.id}`,
         {
           messaging_product: "whatsapp",
-          ...editData
+          ...editData,
         },
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
-        }
+        },
       );
       onGroupUpdated(response.data);
       setError(null);
@@ -94,15 +100,15 @@ function GroupDetailsModal({
       setLoading(true);
       await axios.post(
         `/v14.0/${phone_number_id}/groups/${group.id}/participants`,
-        { 
+        {
           messaging_product: "whatsapp",
-          phone_numbers: [newParticipant.trim()] 
+          phone_numbers: [newParticipant.trim()],
         },
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
-        }
+        },
       );
       setNewParticipant("");
       refreshGroup();
@@ -119,18 +125,15 @@ function GroupDetailsModal({
 
     try {
       setLoading(true);
-      await axios.delete(
-        `/v14.0/${group.id}/participants`,
-        {
-          data: {
-            messaging_product: "whatsapp",
-            participants: [waId]
-          },
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-          },
-        }
-      );
+      await axios.delete(`/v14.0/${group.id}/participants`, {
+        data: {
+          messaging_product: "whatsapp",
+          participants: [waId],
+        },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
+        },
+      });
       refreshGroup();
     } catch (err) {
       console.error("Error removing participant:", err);
@@ -147,13 +150,13 @@ function GroupDetailsModal({
         `/v14.0/${group.id}/join_requests`,
         {
           messaging_product: "whatsapp",
-          join_requests: [waId]
+          join_requests: [waId],
         },
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
-        }
+        },
       );
       fetchJoinRequests();
       refreshGroup();
@@ -168,18 +171,15 @@ function GroupDetailsModal({
   const handleRejectJoinRequest = async (waId) => {
     try {
       setLoading(true);
-      await axios.delete(
-        `/v14.0/${group.id}/join_requests`,
-        {
-          data: {
-            messaging_product: "whatsapp",
-            join_requests: [waId]
-          },
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-          },
-        }
-      );
+      await axios.delete(`/v14.0/${group.id}/join_requests`, {
+        data: {
+          messaging_product: "whatsapp",
+          join_requests: [waId],
+        },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
+        },
+      });
       fetchJoinRequests();
     } catch (err) {
       console.error("Error rejecting join request:", err);
@@ -189,18 +189,13 @@ function GroupDetailsModal({
     }
   };
 
-  
-
   const refreshGroup = async () => {
     try {
-      const response = await axios.get(
-        `/v14.0/${group.id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-          },
-        }
-      );
+      const response = await axios.get(`/v14.0/${group.id}`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
+        },
+      });
       onGroupUpdated(response.data);
     } catch (err) {
       console.error("Error refreshing group:", err);
@@ -217,7 +212,7 @@ function GroupDetailsModal({
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
-        }
+        },
       );
       setInviteLink(response.data);
     } catch (err) {
@@ -248,11 +243,25 @@ function GroupDetailsModal({
     }
   };
 
+  const handleOpenClientChat = (waId) => {
+    const absolutePath =
+      window.location.origin +
+      window.location.pathname +
+      `#/whatsapp/group-chat/${phone_number_id}/${group.id}?wba_id=1100000000001&wa_id=${waId}`;
+    window.open(absolutePath, `group-${group.id}-${waId}`, "width=400,height=600");
+  };
+
+
+
   const formatDate = (dateValue) => {
     if (!dateValue) return "N/A";
     // Check if it's a Unix timestamp (seconds)
     const timestamp = parseInt(dateValue);
-    if (!isNaN(timestamp) && timestamp > 1000000000 && timestamp < 10000000000) {
+    if (
+      !isNaN(timestamp) &&
+      timestamp > 1000000000 &&
+      timestamp < 10000000000
+    ) {
       return new Date(timestamp * 1000).toLocaleString();
     }
     return new Date(dateValue).toLocaleString();
@@ -278,12 +287,21 @@ function GroupDetailsModal({
               {group.id}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-          >
-            <MdClose className="text-2xl" />
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={refreshGroup}
+              className="text-blue-500 hover:text-blue-700 dark:hover:text-blue-300 p-2 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded-full transition-colors"
+              title="Refresh Group Data"
+            >
+              <MdRefresh className="text-xl" />
+            </button>
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+            >
+              <MdClose className="text-2xl" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}
@@ -309,14 +327,21 @@ function GroupDetailsModal({
           {error && (
             <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm flex justify-between items-center">
               <span>{error}</span>
-              <button onClick={() => setError(null)} className="text-red-900 dark:text-red-400 font-bold">×</button>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-900 dark:text-red-400 font-bold"
+              >
+                ×
+              </button>
             </div>
           )}
 
           {activeTab === "overview" && (
             <div className="space-y-6">
               <section>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Description</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                  Description
+                </h3>
                 <p className="text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
                   {group.description || "No description provided."}
                 </p>
@@ -324,31 +349,48 @@ function GroupDetailsModal({
 
               <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">Join Approval Mode</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">
+                    Join Approval Mode
+                  </p>
                   <p className="text-gray-900 dark:text-white font-medium">
-                    {group.join_approval_mode === "approval_required" ? "Approval Required" : "Auto Approve"}
+                    {group.join_approval_mode === "approval_required"
+                      ? "Approval Required"
+                      : "Auto Approve"}
                   </p>
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">Created At</p>
-                  <p className="text-gray-900 dark:text-white font-medium">{formatDate(group.creation_timestamp)}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">
+                    Created At
+                  </p>
+                  <p className="text-gray-900 dark:text-white font-medium">
+                    {formatDate(group.creation_timestamp)}
+                  </p>
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">Participants</p>
-                  <p className="text-gray-900 dark:text-white font-medium">{group.total_participant_count || 0} Members</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-1">
+                    Participants
+                  </p>
+                  <p className="text-gray-900 dark:text-white font-medium">
+                    {group.total_participant_count || 0} Members
+                  </p>
                 </div>
               </section>
 
               {inviteLink && (
                 <section>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Invite Link</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                    Invite Link
+                  </h3>
                   <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800">
                     <p className="text-sm text-blue-800 dark:text-blue-300 break-all mb-2 font-mono">
                       {inviteLink.invite_link}
                     </p>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-blue-600 dark:text-blue-400">
-                        Expires: {formatDate(new Date(inviteLink.expiration_timestamp * 1000))}
+                        Expires:{" "}
+                        {formatDate(
+                          new Date(inviteLink.expiration_timestamp * 1000),
+                        )}
                       </span>
                       <button
                         onClick={handleResetInviteLink}
@@ -384,11 +426,16 @@ function GroupDetailsModal({
               </div>
 
               <div className="space-y-2">
-                <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase">Member List</h4>
+                <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase">
+                  Member List
+                </h4>
                 {group.participants && group.participants.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {group.participants.map((participant) => {
-                      const waId = typeof participant === 'string' ? participant : participant.wa_id;
+                      const waId =
+                        typeof participant === "string"
+                          ? participant
+                          : participant.wa_id;
                       return (
                         <div
                           key={waId}
@@ -397,14 +444,23 @@ function GroupDetailsModal({
                           <span className="text-sm font-medium text-gray-900 dark:text-white">
                             {waId}
                           </span>
-                          <button
-                            onClick={() => handleRemoveParticipant(waId)}
-                            disabled={loading}
-                            className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                            title="Remove Participant"
-                          >
-                            <MdDelete className="text-lg" />
-                          </button>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => handleOpenClientChat(waId)}
+                              className="p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors"
+                              title="Simulate Chat as this participant"
+                            >
+                              <MdOutlineMessage className="text-lg" />
+                            </button>
+                            <button
+                              onClick={() => handleRemoveParticipant(waId)}
+                              disabled={loading}
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                              title="Remove Participant"
+                            >
+                              <MdDelete className="text-lg" />
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -421,7 +477,9 @@ function GroupDetailsModal({
           {activeTab === "join_requests" && (
             <div className="space-y-6">
               <div className="space-y-3">
-                <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase">Pending Requests ({joinRequests.length})</h4>
+                <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase">
+                  Pending Requests ({joinRequests.length})
+                </h4>
                 {joinRequests.length > 0 ? (
                   <div className="space-y-2">
                     {joinRequests.map((request) => (
@@ -430,19 +488,27 @@ function GroupDetailsModal({
                         className="flex justify-between items-center p-4 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm"
                       >
                         <div>
-                          <p className="text-sm font-bold text-gray-900 dark:text-white">{request.wa_id}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">Requested: {formatDate(request.requested_at)}</p>
+                          <p className="text-sm font-bold text-gray-900 dark:text-white">
+                            {request.wa_id}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Requested: {formatDate(request.requested_at)}
+                          </p>
                         </div>
                         <div className="flex gap-2">
                           <button
-                            onClick={() => handleApproveJoinRequest(request.wa_id)}
+                            onClick={() =>
+                              handleApproveJoinRequest(request.wa_id)
+                            }
                             disabled={loading}
                             className="px-3 py-1 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-700 transition-colors"
                           >
                             Approve
                           </button>
                           <button
-                            onClick={() => handleRejectJoinRequest(request.wa_id)}
+                            onClick={() =>
+                              handleRejectJoinRequest(request.wa_id)
+                            }
                             disabled={loading}
                             className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700 transition-colors"
                           >
@@ -501,21 +567,37 @@ function GroupDetailsModal({
                         name="join_approval_mode"
                         value="auto_approve"
                         checked={editData.join_approval_mode === "auto_approve"}
-                        onChange={(e) => setEditData({ ...editData, join_approval_mode: e.target.value })}
+                        onChange={(e) =>
+                          setEditData({
+                            ...editData,
+                            join_approval_mode: e.target.value,
+                          })
+                        }
                         className="text-blue-600 focus:ring-blue-500"
                       />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Auto Approve</span>
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        Auto Approve
+                      </span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="radio"
                         name="join_approval_mode"
                         value="approval_required"
-                        checked={editData.join_approval_mode === "approval_required"}
-                        onChange={(e) => setEditData({ ...editData, join_approval_mode: e.target.value })}
+                        checked={
+                          editData.join_approval_mode === "approval_required"
+                        }
+                        onChange={(e) =>
+                          setEditData({
+                            ...editData,
+                            join_approval_mode: e.target.value,
+                          })
+                        }
                         className="text-blue-600 focus:ring-blue-500"
                       />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Approval Required</span>
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        Approval Required
+                      </span>
                     </label>
                   </div>
                 </div>

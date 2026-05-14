@@ -5,6 +5,7 @@ import WAIncomingMessagePage from "./incoming/WAIncomingMessagePage";
 import WAOutgoingStatusMessagePage from "./outgoing/WAOutgoingStatusMessagePage";
 import WAClientListPage from "./clients/WAClientListPage";
 import WAChatWindowPage from "./chat/WAChatWindowPage";
+import WAGroupChatWindowPage from "./chat/WAGroupChatWindowPage";
 import OrderMessagePage from "./ecommerce/OrderMessagePage";
 import CatalogMessagePage from "./catalog/CatalogMessagePage";
 import WAGroupsPage from "./groups/WAGroupsPage";
@@ -21,6 +22,10 @@ function WBAppRouter() {
         <Route
           path="chat/:wba_id/:phone_number_id/:wa_id"
           element={<WAChatWindowPage />}
+        />
+        <Route
+          path="group-chat/:phone_number_id/:group_id"
+          element={<WAGroupChatWindowPage />}
         />
         <Route
           path="incoming/:wba_id/:phone_number_id"

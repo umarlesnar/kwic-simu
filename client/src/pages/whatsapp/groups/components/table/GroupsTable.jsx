@@ -1,5 +1,5 @@
 import React from "react";
-import { MdDelete, MdEdit, MdInfo } from "react-icons/md";
+import { MdDelete, MdEdit, MdInfo, MdRefresh } from "react-icons/md";
 import axios from "axios";
 
 function GroupsTable({
@@ -9,6 +9,7 @@ function GroupsTable({
   phone_number_id,
   pagination,
   onPageChange,
+  onRefresh,
 }) {
   const handleDelete = async (groupId) => {
     if (window.confirm("Are you sure you want to delete this group?")) {
@@ -37,6 +38,18 @@ function GroupsTable({
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+      {/* Add refresh button header */}
+      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Groups</h3>
+        <button
+          onClick={onRefresh}
+          className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-gray-700 rounded transition-colors"
+          title="Refresh Groups"
+        >
+          <MdRefresh className="text-lg" />
+        </button>
+      </div>
+      
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
@@ -97,7 +110,7 @@ function GroupsTable({
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                    {formatDate(group.created_at)}
+                    {formatDate(group.creation_timestamp)}
                   </td>
                   <td className="px-6 py-4 text-sm">
                     <div className="flex gap-2">
