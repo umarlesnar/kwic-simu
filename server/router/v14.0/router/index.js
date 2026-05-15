@@ -14,6 +14,7 @@ const {
 } = require("./../../../utils/FileUploadManager");
 const { getIO } = require("../../../utils/ws/SocketManager");
 const groupsRouter = require("./groups");
+const { getGroupFromRedis } = require("./groups/groupService");
 
 const uploadDir = path.join(__dirname, "./../../../uploads");
 
@@ -763,6 +764,27 @@ router.post("/:dynamic_value/messages", async (req, res) => {
 
     const msg_id = "wamid." + generateUniqueId();
     const isGroupMessage = body.recipient_type === "group" || (body.to && body.to.endsWith("@g.us"));
+    
+    // VALIDATION: Sync response error if recipient_type and to type do not match
+    if (body.recipient_type === "group" && (!body.to || !body.to.endsWith("@g.us"))) {
+      return res.status(400).json({
+        error: {
+          message: "Recipient type 'group' requires a group ID in the 'to' field.",
+          type: "OAuthException",
+          code: 100,
+        }
+      });
+    }
+    if (body.recipient_type === "individual" && body.to && body.to.endsWith("@g.us")) {
+      return res.status(400).json({
+        error: {
+          message: "Recipient type 'individual' cannot be used with a group ID.",
+          type: "OAuthException",
+          code: 100,
+        }
+      });
+    }
+
     const recipient_id = body.to;
 
     // Check if number should return error or custom status (for non-group messages)
@@ -832,7 +854,7 @@ router.post("/:dynamic_value/messages", async (req, res) => {
 
     const data = {
       messaging_product: "whatsapp",
-      contacts: isGroupMessage ? [] : [
+      contacts: [
         {
           input: body.to,
           wa_id: body.to,
@@ -908,8 +930,11 @@ router.post("/:dynamic_value/messages", async (req, res) => {
       type: "regular",
     };
 
-    const pricingKey = `pricing:${dynamic_value}:${body.to}:${msg_id}`;
-    await req.redisManager.putByKey(pricingKey, pricing);
+    // Only create pricing and store it if it's not a pin action
+    if (body.type !== "pin") {
+      const pricingKey = `pricing:${dynamic_value}:${body.to}:${msg_id}`;
+      await req.redisManager.putByKey(pricingKey, pricing);
+    }
 
     // Handle order messages
     if (body.type === "order" || body.interactive?.type === "order_details") {
@@ -924,7 +949,7 @@ router.post("/:dynamic_value/messages", async (req, res) => {
       });
     }
 
-    const messaage_key = `message:${dynamic_value}:${body.to}:${msg_id}`;
+    const message_key = `message:${dynamic_value}:${body.to}:${msg_id}`;
     const message_value = {
       id: msg_id,
       ...body,
@@ -968,8 +993,9 @@ router.post("/:dynamic_value/messages", async (req, res) => {
       message_value.phone_number_id = dynamic_value;
       message_value.to = body.to;
     }
-
-    await req.redisManager.putByKey(messaage_key, message_value);
+    if (body.type !== "pin") {
+      await req.redisManager.putByKey(message_key, message_value);
+    }
 
     // Apply pin/unpin to the target chat message (Messages API simulation)
     if (
@@ -978,10 +1004,63 @@ router.post("/:dynamic_value/messages", async (req, res) => {
       isGroupMessage
     ) {
       try {
+        const op = body.pin.type === "unpin" ? "unpin" : "pin";
+
+        // ADMIN CHECK: Only the group admin can pin or unpin messages.
+        // In the simulator, the business account (dynamic_value) must be a participant.
+        const group = await getGroupFromRedis(req.redisManager, dynamic_value, body.to);
+        if (!group) {
+          return res.status(400).json({
+            error: {
+              message: "The group ID specified is invalid or the group does not exist.",
+              type: "OAuthException",
+              code: 100,
+            }
+          });
+        }
+        const isParticipant = group.participants.some(p => (typeof p === 'string' ? p : p.wa_id) === dynamic_value);
+        if (!isParticipant) {
+          return res.status(403).json({
+            error: {
+              message: "Only group admins can pin or unpin messages.",
+              type: "OAuthException",
+              code: 403,
+            }
+          });
+        }
+        
+        if (op === "pin") {
+          // ENFORCE LIMIT: Maximum 3 pinned messages
+          const groupMessagesPattern = `message:${dynamic_value}:${body.to}:*`;
+          const allMessagesData = await req.redisManager.getValuesByPattern(groupMessagesPattern);
+          const pinnedMessages = allMessagesData
+            .map(m => JSON.parse(m.value))
+            .filter(m => m.pinned === true)
+            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // Oldest first
+
+          if (pinnedMessages.length >= 3) {
+            // Unpin the oldest one
+            const oldest = pinnedMessages[0];
+            const oldestKey = `message:${dynamic_value}:${body.to}:${oldest.id}`;
+            oldest.pinned = false;
+            oldest.unpinned_at = new Date().toISOString();
+            await req.redisManager.putByKey(oldestKey, oldest, -1);
+            
+            // Notify about auto-unpin
+            try {
+              const io = getIO();
+              io.to(`group/${body.to}`).emit("topic-data", {
+                topic: `message/whatsapp/${body.to}`,
+                data: oldest,
+                timestamp: new Date(),
+              });
+            } catch (e) {}
+          }
+        }
+
         const targetKey = `message:${dynamic_value}:${body.to}:${body.pin.message_id}`;
         const targetMsg = await req.redisManager.getByKey(targetKey);
         if (targetMsg) {
-          const op = body.pin.type === "unpin" ? "unpin" : "pin";
           const updatedTarget = { ...targetMsg };
           if (op === "pin") {
             updatedTarget.pinned = true;
@@ -1014,28 +1093,30 @@ router.post("/:dynamic_value/messages", async (req, res) => {
       }
     }
 
-    try {
-      const io = getIO();
-      if (isGroupMessage) {
-        const payload = {
-          topic: `message/whatsapp/${body.to}`,
-          data: message_value,
-          timestamp: new Date(),
-        };
-        io.to(`group/${body.to}`).emit("topic-data", payload);
-        io.to(`message/whatsapp/${body.to}`).emit("topic-data", payload);
-      } else {
-        io.to(`message/whatsapp/${body.to}`).emit("topic-data", {
-          topic: `message/whatsapp/${body.to}`,
-          data: message_value,
-          timestamp: new Date(),
-        });
+    if (body.type !== "pin") {
+      try {
+        const io = getIO();
+        if (isGroupMessage) {
+          const payload = {
+            topic: `message/whatsapp/${body.to}`,
+            data: message_value,
+            timestamp: new Date(),
+          };
+          io.to(`group/${body.to}`).emit("topic-data", payload);
+          io.to(`message/whatsapp/${body.to}`).emit("topic-data", payload);
+        } else {
+          io.to(`message/whatsapp/${body.to}`).emit("topic-data", {
+            topic: `message/whatsapp/${body.to}`,
+            data: message_value,
+            timestamp: new Date(),
+          });
+        }
+      } catch (error) {
+        console.log("Error emitting socket event:", error);
       }
-    } catch (error) {
-      console.log("Error emitting socket event:", error);
     }
 
-    if (isGroupMessage) {
+    if (isGroupMessage && body.type !== "pin") {
       const groupSentWebhook = {
         object: "whatsapp_business_account",
         entry: [
@@ -1082,7 +1163,7 @@ router.post("/:dynamic_value/messages", async (req, res) => {
           try {
             // Update status in Redis
             const messageData =
-              await req.redisManager.getValuesByPattern(messaage_key);
+              await req.redisManager.getValuesByPattern(message_key);
             if (messageData.length > 0) {
               const message = JSON.parse(messageData[0].value);
               message.status = status;
@@ -1091,7 +1172,7 @@ router.post("/:dynamic_value/messages", async (req, res) => {
               } else if (status === "delivered") {
                 message.delivered_at = new Date().toISOString();
               }
-              await req.redisManager.putByKey(messaage_key, message, -1);
+              await req.redisManager.putByKey(message_key, message, -1);
 
               // Send webhook
               const statusWebhook = {
@@ -1334,7 +1415,7 @@ router.post("/:dynamic_value/marketing_messages", async (req, res) => {
       converation_obj = conversation_ids[0].value || {};
     }
 
-    const messaage_key = `message:${dynamic_value}:${body.to}:${msg_id}`;
+    const message_key = `message:${dynamic_value}:${body.to}:${msg_id}`;
     const message_value = {
       id: msg_id,
       ...body,
@@ -1366,7 +1447,7 @@ router.post("/:dynamic_value/marketing_messages", async (req, res) => {
           try {
             // Update status in Redis
             const messageData =
-              await req.redisManager.getValuesByPattern(messaage_key);
+              await req.redisManager.getValuesByPattern(message_key);
             if (messageData.length > 0) {
               const message = JSON.parse(messageData[0].value);
               message.status = status;
@@ -1375,7 +1456,7 @@ router.post("/:dynamic_value/marketing_messages", async (req, res) => {
               } else if (status === "delivered") {
                 message.delivered_at = new Date().toISOString();
               }
-              await req.redisManager.putByKey(messaage_key, message, -1);
+              await req.redisManager.putByKey(message_key, message, -1);
 
               // Send webhook
               const statusWebhook = {
