@@ -33,7 +33,7 @@ export const AuthProvider = ({ children }) => {
   }, [checkAuth]);
 
   const login = useCallback((userData) => {
-    localStorage.setItem("token", "your-token-value");
+    localStorage.setItem("token", userData.token);
     localStorage.setItem("user", JSON.stringify(userData));
     setUser(userData);
     setLoading(false); // Set loading to false after login

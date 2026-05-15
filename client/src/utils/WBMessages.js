@@ -59,6 +59,26 @@ class WBMessages {
       ],
     };
   }
+
+  /**
+   * Inbound group message webhook shape (top-level group_id per Cloud API docs).
+   */
+  getGroupTextMessage(textBody, profileName, groupId) {
+    const base = this.getTextMessage(textBody, profileName);
+    const msg = base.entry[0].changes[0].value.messages[0];
+    msg.group_id = groupId;
+    msg.recipient_type = "group";
+    return base;
+  }
+
+  getGroupMediaMessage(mediaType, mediaData, profileName, groupId) {
+    const base = this.getMediaMessage(mediaType, mediaData, profileName);
+    const msg = base.entry[0].changes[0].value.messages[0];
+    msg.group_id = groupId;
+    msg.recipient_type = "group";
+    return base;
+  }
+
   getOrderMessage(selectedProducts, profileName = "Riaz") {
     const productItems = selectedProducts.map((product) => {
       const priceStr = (product.price || "0")

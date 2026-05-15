@@ -1,12 +1,14 @@
 import React from "react";
 import { MdDelete, MdEdit, MdInfo, MdRefresh } from "react-icons/md";
 import axios from "axios";
+import GroupFailedWebhookMenu from "../GroupFailedWebhookMenu";
 
 function GroupsTable({
   groups,
   onViewDetails,
   onGroupDeleted,
   phone_number_id,
+  wba_id,
   pagination,
   onPageChange,
   onRefresh,
@@ -70,6 +72,9 @@ function GroupsTable({
                 Created
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                Sim webhooks
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">
                 Actions
               </th>
             </tr>
@@ -77,7 +82,7 @@ function GroupsTable({
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {groups.length === 0 ? (
               <tr>
-                <td colSpan="6" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan="7" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                   No groups found
                 </td>
               </tr>
@@ -110,7 +115,14 @@ function GroupsTable({
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                    {formatDate(group.creation_timestamp)}
+                    {formatDate(group.creation_timestamp ?? group.created_at)}
+                  </td>
+                  <td className="px-6 py-4 text-sm">
+                    <GroupFailedWebhookMenu
+                      phone_number_id={phone_number_id}
+                      wba_id={wba_id}
+                      group={group}
+                    />
                   </td>
                   <td className="px-6 py-4 text-sm">
                     <div className="flex gap-2">
@@ -137,32 +149,29 @@ function GroupsTable({
         </table>
       </div>
 
-      {/* Pagination */}
-      {pagination.total_count > pagination.limit && (
+      {pagination.hasNext || pagination.hasPrev ? (
         <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
           <div className="text-sm text-gray-600 dark:text-gray-400">
-            Showing {pagination.offset + 1} to{" "}
-            {Math.min(pagination.offset + pagination.limit, pagination.total_count)} of{" "}
-            {pagination.total_count}
+            Page navigation (Meta cursor paging)
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => onPageChange(Math.max(0, pagination.offset - pagination.limit))}
-              disabled={pagination.offset === 0}
+              onClick={() => onPageChange("prev")}
+              disabled={!pagination.hasPrev}
               className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
             >
               Previous
             </button>
             <button
-              onClick={() => onPageChange(pagination.offset + pagination.limit)}
-              disabled={pagination.offset + pagination.limit >= pagination.total_count}
+              onClick={() => onPageChange("next")}
+              disabled={!pagination.hasNext}
               className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
             >
               Next
             </button>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -593,8 +593,16 @@ ApiRouter.post("/webhook/push", async (req, res) => {
         }
 
         // Persist inbound messages
-        if (phoneNumberId && contactWaId && Array.isArray(value?.messages)) {
+        if (phoneNumberId && Array.isArray(value?.messages)) {
           for (const msg of value.messages) {
+            const senderWa =
+              value?.contacts?.[0]?.wa_id || msg.from || null;
+
+            if (!senderWa) {
+              console.log("Skipping message: no sender wa_id / contacts");
+              continue;
+            }
+
             const msgId =
               msg.id ||
               "wamid." + Date.now() + Math.random().toString(36).slice(2, 10);
@@ -602,21 +610,29 @@ ApiRouter.post("/webhook/push", async (req, res) => {
               ? new Date(parseInt(msg.timestamp, 10) * 1000).toISOString()
               : new Date().toISOString();
 
-            // Detect if this is a group message
-            const groupId = msg.context?.group_id;
-            const conversationId = groupId || contactWaId;
+            const groupId = msg.group_id || msg.context?.group_id;
+            const isGroup = Boolean(groupId);
+            const conversationId = groupId || senderWa;
+            const contactWaId = senderWa;
 
-            // Persist the FULL original WhatsApp message payload to avoid losing fields
+            const messageForStore = { ...msg };
+            if (isGroup) {
+              messageForStore.recipient_type = "group";
+            }
+
             const storedMessage = {
               id: msgId,
-              from: msg.from || contactWaId, // sender is the wa_id for inbound webhook events
-              to: phoneNumberId,
+              from: msg.from || contactWaId,
+              to: isGroup ? groupId : phoneNumberId,
+              phone_number_id: phoneNumberId,
+              recipient_type: isGroup ? "group" : "individual",
               type: msg.type || (msg.text ? "text" : "unknown"),
-              text: msg.text, // quick access for text messages
-              message: msg, // full raw payload for all message types
+              text: msg.text,
+              message: messageForStore,
               created_at: createdAt,
               status: "delivered",
-              direction: "incoming"
+              direction: "incoming",
+              ...(isGroup ? { group_id: groupId } : {}),
             };
 
             const messageKey = `message:${phoneNumberId}:${conversationId}:${msgId}`;
@@ -727,19 +743,6 @@ ApiRouter.post("/webhook/push", async (req, res) => {
                 console.error("Error storing flow response:", flowError);
               }
             }
-
-            // Emit socket event for real-time updates (best effort)
-            // try {
-            //   const io = getIO();
-            //   const topic = `message/whatsapp/${contactWaId}`;
-            //   io.to(topic).emit("topic-data", {
-            //     topic,
-            //     data: storedMessage,
-            //     timestamp: new Date(),
-            //   });
-            // } catch (error) {
-            //   console.log("Error emitting socket event:", error);
-            // }
           }
         }
 
@@ -748,7 +751,7 @@ ApiRouter.post("/webhook/push", async (req, res) => {
           for (const statusUpdate of value.statuses) {
             try {
               const msgId = statusUpdate.id;
-              const recipientWaId = statusUpdate.recipient_id;
+              const recipientId = statusUpdate.recipient_id;
               const status = statusUpdate.status; // sent | delivered | read | failed | unknown | pending
               const ts = statusUpdate.timestamp
                 ? new Date(
@@ -756,15 +759,25 @@ ApiRouter.post("/webhook/push", async (req, res) => {
                   ).toISOString()
                 : new Date().toISOString();
 
-              if (!msgId || !recipientWaId) continue;
+              if (!msgId || !recipientId) continue;
 
-              const messageKey = `message:${phoneNumberId}:${recipientWaId}:${msgId}`;
+              // 1:1 uses recipient_id = wa_id; group uses recipient_id = group_id + recipient_type "group"
+              const messageKey = `message:${phoneNumberId}:${recipientId}:${msgId}`;
               const existing = await req.redisManager.getByKey(messageKey);
               if (!existing) continue; // nothing to update
 
               const updated = { ...existing, status };
+              if (statusUpdate.recipient_type) {
+                updated.recipient_type = statusUpdate.recipient_type;
+              }
               if (status === "delivered") updated.delivered_at = ts;
               if (status === "read") updated.read_at = ts;
+              const participantReceipt =
+                statusUpdate.participant_recipient_id ||
+                statusUpdate.recipient_participant_id;
+              if (participantReceipt) {
+                updated.last_status_participant_id = participantReceipt;
+              }
               if (
                 statusUpdate.conversation &&
                 (!existing.conversation ||
@@ -779,13 +792,29 @@ ApiRouter.post("/webhook/push", async (req, res) => {
                     statusUpdate.conversation.expiration_timestamp,
                 };
               }
+              if (
+                statusUpdate.pricing &&
+                (!updated.conversation ||
+                  !updated.conversation.pricing)
+              ) {
+                updated.conversation = {
+                  ...(updated.conversation || {}),
+                  id:
+                    (updated.conversation && updated.conversation.id) ||
+                    statusUpdate.conversation?.id,
+                  origin:
+                    (updated.conversation && updated.conversation.origin) ||
+                    statusUpdate.conversation?.origin,
+                  pricing: statusUpdate.pricing,
+                };
+              }
 
               await req.redisManager.putByKey(messageKey, updated, -1);
 
               // Emit socket event for real-time updates (best effort)
               try {
                 const io = getIO();
-                const topic = `message/whatsapp/${recipientWaId}`;
+                const topic = `message/whatsapp/${recipientId}`;
                 io.to(topic).emit("topic-data", {
                   topic,
                   data: updated,
@@ -1083,6 +1112,21 @@ ApiRouter.get("/:dynamic_value/:wa_id/messages", async (req, res) => {
       messageData.type || raw?.type || (raw?.text ? "text" : "unknown");
     const text = messageData.text?.body || raw?.text?.body || null;
 
+    let direction = messageData.direction;
+    if (!direction) {
+      const fromVal = messageData.from || raw?.from;
+      const groupIdOnMsg = raw?.group_id || messageData.group_id;
+      if (wa_id.endsWith("@g.us")) {
+        if (groupIdOnMsg === wa_id && fromVal && fromVal !== dynamic_value) {
+          direction = "incoming";
+        } else {
+          direction = "outgoing";
+        }
+      } else {
+        direction = fromVal === wa_id ? "incoming" : "outgoing";
+      }
+    }
+
     // Order extraction (supports both order and interactive order_details)
     let order = null;
     if (type === "order" || raw?.interactive?.type === "order_details") {
@@ -1143,15 +1187,25 @@ ApiRouter.get("/:dynamic_value/:wa_id/messages", async (req, res) => {
 
     return {
       id: messageData.id,
-      from: messageData.from || dynamic_value,
-      to: messageData.to || wa_id,
+      from: messageData.from || raw?.from || dynamic_value,
+      to:
+        messageData.to !== undefined && messageData.to !== null
+          ? messageData.to
+          : raw?.to ?? wa_id,
+      recipient_type: messageData.recipient_type || raw?.recipient_type,
+      phone_number_id: messageData.phone_number_id || dynamic_value,
+      group_id: messageData.group_id || raw?.group_id,
+      pinned: Boolean(messageData.pinned),
+      pin_expiration_days: messageData.pin_expiration_days ?? null,
       type,
       text, // convenience
       message: raw, // full payload (with conversation removed)
+      order,
+      template,
+      conversation,
       timestamp,
       status: messageData.status || raw?.status || "sent",
-      direction:
-        (messageData.from || raw?.from) === wa_id ? "incoming" : "outgoing",
+      direction,
     };
   });
 

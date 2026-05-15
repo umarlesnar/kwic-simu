@@ -31,7 +31,17 @@ const REDIS_KEY_PATTERNS = {
     `group:${phoneNumberId}:${groupId}:invite_link`,
   GLOBAL_GROUP_MAP: (groupId) => `group_map:${groupId}`,
   GLOBAL_INVITE_LINK_MAP: (token) => `invite_link_map:${token}`,
+  /** Pending async group create keyed by request_id */
+  PENDING_GROUP_REQUEST: (requestId) => `pending_group_request:${requestId}`,
 };
+
+/** Simulated Meta processing delay before group_create webhook (ms) */
+const GROUP_CREATE_DELAY_AUTO_MS = Number(
+  process.env.GROUP_CREATE_DELAY_AUTO_MS || 200
+);
+const GROUP_CREATE_DELAY_APPROVAL_MS = Number(
+  process.env.GROUP_CREATE_DELAY_APPROVAL_MS || 1500
+);
 
 // Webhook event types
 const WEBHOOK_EVENT_TYPES = {
@@ -126,6 +136,8 @@ module.exports = {
   INVITE_LINK_TTL,
   GROUP_ID_SUFFIX,
   JOIN_APPROVAL_MODES,
+  GROUP_CREATE_DELAY_AUTO_MS,
+  GROUP_CREATE_DELAY_APPROVAL_MS,
   REDIS_KEY_PATTERNS,
   WEBHOOK_EVENT_TYPES,
   PARTICIPANT_ACTIONS,

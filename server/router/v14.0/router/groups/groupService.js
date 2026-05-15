@@ -7,6 +7,8 @@ const {
   MAX_PARTICIPANTS,
   REDIS_KEY_PATTERNS,
   INVITE_LINK_TTL,
+  GROUP_CREATE_DELAY_AUTO_MS,
+  GROUP_CREATE_DELAY_APPROVAL_MS,
 } = require("./constants");
 
 const {
@@ -15,7 +17,92 @@ const {
   createInviteLink,
   generateInviteLinkUrl,
   calculateInviteLinkExpiration,
+  generateGraphRequestId,
+  generateJoinRequestId,
 } = require("./models");
+
+const PENDING_GROUP_TTL_SEC = 3600;
+
+function encodeGroupsListCursor(startIndex) {
+  return Buffer.from(JSON.stringify({ s: startIndex }), "utf8").toString("base64url");
+}
+
+function decodeGroupsListCursor(cursor) {
+  if (!cursor || typeof cursor !== "string") return null;
+  try {
+    const j = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    return typeof j.s === "number" && j.s >= 0 ? j.s : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stores a pending group creation (async Meta flow) until processing completes.
+ */
+async function savePendingGroupCreation(redisManagerWrapper, payload) {
+  const redisManager = await redisManagerWrapper.getClient();
+  const requestId = payload.request_id || generateGraphRequestId();
+  const key = REDIS_KEY_PATTERNS.PENDING_GROUP_REQUEST(requestId);
+  const body = {
+    ...payload,
+    request_id: requestId,
+    created_at: new Date().toISOString(),
+  };
+  await redisManager.setex(key, PENDING_GROUP_TTL_SEC, JSON.stringify(body));
+  return body;
+}
+
+async function loadPendingGroupCreation(redisManagerWrapper, requestId) {
+  const redisManager = await redisManagerWrapper.getClient();
+  const raw = await redisManager.get(REDIS_KEY_PATTERNS.PENDING_GROUP_REQUEST(requestId));
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function removePendingGroupCreation(redisManagerWrapper, requestId) {
+  const redisManager = await redisManagerWrapper.getClient();
+  await redisManager.del(REDIS_KEY_PATTERNS.PENDING_GROUP_REQUEST(requestId));
+}
+
+async function listPendingGroupCreations(redisManagerWrapper, phoneNumberId) {
+  try {
+    const redisManager = await redisManagerWrapper.getClient();
+    const pattern = REDIS_KEY_PATTERNS.PENDING_GROUP_REQUEST("*");
+    const keys = await redisManager.keys(pattern);
+    const pendingList = [];
+
+    for (const key of keys) {
+      const raw = await redisManager.get(key);
+      if (raw) {
+        const pending = JSON.parse(raw);
+        if (pending.phone_number_id === phoneNumberId) {
+          pendingList.push(pending);
+        }
+      }
+    }
+
+    pendingList.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    return pendingList;
+  } catch (error) {
+    console.error("Error listing pending group creations:", error);
+    throw error;
+  }
+}
+
+function getSimulatedGroupCreateDelayMs(joinApprovalMode) {
+  return joinApprovalMode === "approval_required"
+    ? GROUP_CREATE_DELAY_APPROVAL_MS
+    : GROUP_CREATE_DELAY_AUTO_MS;
+}
 
 /**
  * Creates a new group in Redis
@@ -170,46 +257,83 @@ async function deleteGroupFromRedis(redisManagerWrapper, phoneNumberId, groupId)
 }
 
 /**
- * Lists all groups for a phone number
- * @param {object} redisManager - Redis manager instance
- * @param {string} phoneNumberId - Phone number ID
- * @param {number} limit - Number of groups to return
- * @param {number} offset - Number of groups to skip
- * @returns {object} Object with groups array and paging metadata
+ * Lists all groups for a phone number (Meta-style cursor paging)
+ * @param {object} redisManagerWrapper
+ * @param {string} phoneNumberId
+ * @param {object} opts - { limit, after, before, basePagingUrl } basePagingUrl optional for next/previous URLs
+ * @returns {object} { data: { groups }, paging }
  */
 async function listGroupsFromRedis(
   redisManagerWrapper,
   phoneNumberId,
-  limit = 10,
-  offset = 0
+  opts = {}
 ) {
   try {
     const redisManager = await redisManagerWrapper.getClient();
     const indexKey = REDIS_KEY_PATTERNS.GROUP_INDEX(phoneNumberId);
 
-    // Get all group IDs
+    let limit = parseInt(String(opts.limit || "25"), 10);
+    if (Number.isNaN(limit) || limit < 1) limit = 25;
+    if (limit > 1024) limit = 1024;
+
     const allGroupIds = await redisManager.smembers(indexKey);
-    const totalCount = allGroupIds.length;
-
-    // Apply pagination
-    const paginatedGroupIds = allGroupIds.slice(offset, offset + limit);
-
-    // Fetch group data
     const groups = [];
-    for (const groupId of paginatedGroupIds) {
+    for (const groupId of allGroupIds) {
       const group = await getGroupFromRedis(redisManagerWrapper, phoneNumberId, groupId);
-      if (group) {
-        groups.push(group);
-      }
+      if (group) groups.push(group);
+    }
+
+    groups.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    const totalCount = groups.length;
+
+    let start = 0;
+    if (opts.after) {
+      const decoded = decodeGroupsListCursor(opts.after);
+      if (decoded != null) start = decoded;
+    } else if (opts.before) {
+      const decoded = decodeGroupsListCursor(opts.before);
+      if (decoded != null) start = decoded;
+    }
+
+    if (start >= totalCount) start = Math.max(0, totalCount - limit);
+    const slice = groups.slice(start, start + limit);
+
+    const hasNext = start + limit < totalCount;
+    const hasPrev = start > 0;
+
+    const prevStart = Math.max(0, start - limit);
+    const nextStart = start + limit;
+
+    const baseUrl =
+      opts.basePagingUrl ||
+      `https://graph.facebook.com/v14.0/${phoneNumberId}/groups`;
+
+    const paging = {
+      cursors: {
+        before: hasPrev ? encodeGroupsListCursor(prevStart) : undefined,
+        after: hasNext ? encodeGroupsListCursor(nextStart) : undefined,
+      },
+    };
+
+    if (hasNext) {
+      paging.next = `${baseUrl}?limit=${limit}&after=${encodeURIComponent(
+        encodeGroupsListCursor(nextStart)
+      )}`;
+    }
+    if (hasPrev) {
+      paging.previous = `${baseUrl}?limit=${limit}&before=${encodeURIComponent(
+        encodeGroupsListCursor(prevStart)
+      )}`;
     }
 
     return {
-      data: groups,
-      paging: {
-        total_count: totalCount,
-        limit,
-        offset,
-      },
+      data: { groups: slice },
+      paging,
+      _meta: { start, totalCount, limit },
     };
   } catch (error) {
     console.error("Error listing groups from Redis:", error);
@@ -357,7 +481,26 @@ async function getJoinRequests(redisManagerWrapper, phoneNumberId, groupId) {
       return [];
     }
 
-    return JSON.parse(data);
+    let list = JSON.parse(data);
+    let dirty = false;
+    list = list.map((jr) => {
+      const next = { ...jr };
+      if (!next.join_request_id) {
+        next.join_request_id = generateJoinRequestId(next.wa_id);
+        dirty = true;
+      }
+      if (next.creation_timestamp == null && next.requested_at) {
+        next.creation_timestamp = Math.floor(
+          new Date(next.requested_at).getTime() / 1000
+        );
+        dirty = true;
+      }
+      return next;
+    });
+    if (dirty) {
+      await redisManager.set(joinRequestsKey, JSON.stringify(list));
+    }
+    return list;
   } catch (error) {
     console.error("Error getting join requests:", error);
     throw error;
@@ -372,7 +515,12 @@ async function getJoinRequests(redisManagerWrapper, phoneNumberId, groupId) {
  * @param {string} waId - WhatsApp ID of join request to remove
  * @returns {boolean} True if removed, false if not found
  */
-async function removeJoinRequest(redisManagerWrapper, phoneNumberId, groupId, waId) {
+async function removeJoinRequest(
+  redisManagerWrapper,
+  phoneNumberId,
+  groupId,
+  joinRequestIdOrWaId
+) {
   try {
     const redisManager = await redisManagerWrapper.getClient();
     const joinRequestsKey = REDIS_KEY_PATTERNS.GROUP_JOIN_REQUESTS(
@@ -388,8 +536,12 @@ async function removeJoinRequest(redisManagerWrapper, phoneNumberId, groupId, wa
     let joinRequests = JSON.parse(data);
     const initialLength = joinRequests.length;
 
-    // Remove join request
-    joinRequests = joinRequests.filter((jr) => jr.wa_id !== waId);
+    // Remove join request (by join_request_id or wa_id)
+    joinRequests = joinRequests.filter(
+      (jr) =>
+        jr.wa_id !== joinRequestIdOrWaId &&
+        jr.join_request_id !== joinRequestIdOrWaId
+    );
 
     // Check if join request was found
     if (joinRequests.length === initialLength) {
@@ -543,6 +695,13 @@ module.exports = {
   updateGroupInRedis,
   deleteGroupFromRedis,
   listGroupsFromRedis,
+  encodeGroupsListCursor,
+  decodeGroupsListCursor,
+  savePendingGroupCreation,
+  loadPendingGroupCreation,
+  removePendingGroupCreation,
+  listPendingGroupCreations,
+  getSimulatedGroupCreateDelayMs,
   addParticipantsToGroup,
   removeParticipantFromGroup,
   addJoinRequest,
@@ -595,16 +754,26 @@ module.exports = {
         const existingRequestsData = await redisManager.get(joinRequestsKey);
         const joinRequests = existingRequestsData ? JSON.parse(existingRequestsData) : [];
         
-        if (!joinRequests.find(jr => jr.wa_id === waId)) {
-          joinRequests.push({
-            wa_id: waId,
-            requested_at: new Date().toISOString(),
-            status: "pending"
-          });
+        const existingJr = joinRequests.find((jr) => jr.wa_id === waId);
+        if (!existingJr) {
+          const jr = createJoinRequest(waId);
+          joinRequests.push(jr);
           await redisManager.set(joinRequestsKey, JSON.stringify(joinRequests));
+          return {
+            success: true,
+            status: "request_pending",
+            group_id,
+            phone_number_id,
+            join_request_id: jr.join_request_id,
+          };
         }
-        
-        return { success: true, status: "request_pending", group_id, phone_number_id };
+        return {
+          success: true,
+          status: "request_pending",
+          group_id,
+          phone_number_id,
+          join_request_id: existingJr.join_request_id,
+        };
       }
     } catch (error) {
       console.error("Error joining group by invite link:", error);

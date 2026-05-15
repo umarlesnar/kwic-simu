@@ -69,6 +69,9 @@ class MessageProcessor {
         if (existingMessage) {
           const messageObj = JSON.parse(existingMessage);
           messageObj.status = statusData.status;
+          if (statusData.recipient_type) {
+            messageObj.recipient_type = statusData.recipient_type;
+          }
 
           if (statusData.errors && statusData.errors.length > 0) {
             messageObj.error_reason = statusData.errors[0];
@@ -97,6 +100,13 @@ class MessageProcessor {
       const messageData = value.messages[0];
       const wa_id = contact.wa_id;
       const phone_number_id = value.metadata?.phone_number_id;
+
+      if (messageData.type === "pin") {
+        return;
+      }
+      if (messageData.group_id) {
+        return;
+      }
 
       if (!phone_number_id) {
         console.log("Could not determine phone_number_id from webhook payload");

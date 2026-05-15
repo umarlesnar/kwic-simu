@@ -7,6 +7,7 @@ const {
   isValidPhoneNumberId,
   isValidGroupId,
   isValidPhoneNumber,
+  isValidJoinRequestClientId,
   isValidJoinApprovalMode,
   validateRequiredFields,
   validatePhoneNumbersArray,
@@ -356,9 +357,9 @@ function validateApproveJoinRequestRequest(req) {
     if (!Array.isArray(req.body.join_requests) || req.body.join_requests.length === 0) {
       errors.push("join_requests must be a non-empty array");
     } else {
-      const invalid = req.body.join_requests.filter((waId) => !isValidPhoneNumber(waId));
+      const invalid = req.body.join_requests.filter((id) => !isValidJoinRequestClientId(id));
       if (invalid.length > 0) {
-        errors.push("Invalid wa_id format in join_requests array");
+        errors.push("Invalid join_request_id or wa_id in join_requests array");
       }
     }
   }
@@ -398,9 +399,9 @@ function validateRejectJoinRequestRequest(req) {
     if (!Array.isArray(req.body.join_requests) || req.body.join_requests.length === 0) {
       errors.push("join_requests must be a non-empty array");
     } else {
-      const invalid = req.body.join_requests.filter((waId) => !isValidPhoneNumber(waId));
+      const invalid = req.body.join_requests.filter((id) => !isValidJoinRequestClientId(id));
       if (invalid.length > 0) {
-        errors.push("Invalid wa_id format in join_requests array");
+        errors.push("Invalid join_request_id or wa_id in join_requests array");
       }
     }
   }
@@ -462,11 +463,12 @@ function validateListGroupsRequest(req) {
     }
   }
 
-  if (req.query.offset) {
-    const offset = parseInt(req.query.offset);
-    if (isNaN(offset) || offset < 0) {
-      errors.push("offset must be a non-negative integer");
-    }
+  if (req.query.after && typeof req.query.after !== "string") {
+    errors.push("after must be a string cursor");
+  }
+
+  if (req.query.before && typeof req.query.before !== "string") {
+    errors.push("before must be a string cursor");
   }
 
   return {

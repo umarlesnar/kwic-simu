@@ -4,12 +4,22 @@ import { WebhookService } from "@api/WebhookService";
 import WBMessages from "@utils/WBMessages";
 import { toast } from "react-toastify";
 import { ImSpinner11 } from "react-icons/im";
-import { 
-  MdSend, 
-  MdAttachFile, 
+import {
+  MdSend,
+  MdAttachFile,
   MdInsertDriveFile,
+  MdPushPin,
 } from "react-icons/md";
 import { io } from "socket.io-client";
+import axios from "axios";
+import GroupMessageStatusActions from "./GroupMessageStatusActions";
+
+const defaultToken =
+  "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0";
+
+const authHeaders = () => ({
+  Authorization: `Bearer ${localStorage.getItem("token") || defaultToken}`,
+});
 
 const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) => {
   const [messages, setMessages] = useState([]);
@@ -17,12 +27,14 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
   const [messageInput, setMessageInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  
+  const [pinTarget, setPinTarget] = useState(null);
+  const [pinExpirationDays, setPinExpirationDays] = useState(7);
+  const [pinBusy, setPinBusy] = useState(false);
+
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
 
-  // Auto-scroll to bottom of messages
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -33,7 +45,6 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
     }
   }, [messages]);
 
-  // Socket.IO Setup
   useEffect(() => {
     if (group?.id) {
       const socket = io(window.location.origin, {
@@ -44,15 +55,17 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
       socket.on("connect", () => {
         const topic = `message/whatsapp/${group.id}`;
         socket.emit("subscribe", { topic });
-        console.log(`Subscribed to topic: ${topic}`);
       });
 
       socket.on("topic-data", (data) => {
         if (data.data) {
           setMessages((prev) => {
-            // Avoid duplicates
-            if (prev.some(m => m.id === data.data.id)) return prev;
-            return [...prev, data.data];
+            const id = data.data.id;
+            const idx = prev.findIndex((m) => m.id === id);
+            if (idx === -1) return [...prev, data.data];
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...data.data };
+            return next;
           });
         }
       });
@@ -63,17 +76,20 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
     }
   }, [group?.id]);
 
-  const fetchMessages = useCallback(async (groupId) => {
-    try {
-      setMessagesLoading(true);
-      const response = await businessService.getChatMessages(phone_number_id, groupId);
-      setMessages(response.data || []);
-    } catch (err) {
-      toast.error("Failed to fetch messages: " + err.message);
-    } finally {
-      setMessagesLoading(false);
-    }
-  }, [phone_number_id]);
+  const fetchMessages = useCallback(
+    async (groupId) => {
+      try {
+        setMessagesLoading(true);
+        const response = await businessService.getChatMessages(phone_number_id, groupId);
+        setMessages(response.data || []);
+      } catch (err) {
+        toast.error("Failed to fetch messages: " + err.message);
+      } finally {
+        setMessagesLoading(false);
+      }
+    },
+    [phone_number_id]
+  );
 
   useEffect(() => {
     if (group?.id) {
@@ -87,22 +103,17 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
 
     try {
       setIsSending(true);
-      
+
       const wb = new WBMessages(wba_id || "1100000000001", phone_number_id);
       wb.display_phone_number = phone_number_id;
       wb.wa_id = client.wa_id;
 
       const profileName = client.profile?.name || client.wa_id;
-      const payload = wb.getTextMessage(messageInput.trim(), profileName);
-
-      // IMPORTANT: Inject group context so the server knows it's a group message
-      const messageObj = payload.entry[0].changes[0].value.messages[0];
-      messageObj.context = { group_id: group.id };
+      const payload = wb.getGroupTextMessage(messageInput.trim(), profileName, group.id);
 
       await WebhookService.push(payload);
 
       setMessageInput("");
-      // Socket will update the messages list
     } catch (err) {
       toast.error(err.message || "Failed to send message");
     } finally {
@@ -119,24 +130,22 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
       const formData = new FormData();
       formData.append("file", file);
 
-      // 1. Upload to simulator media endpoint
       const uploadRes = await businessService.uploadMedia(formData);
       const mediaData = uploadRes.data;
 
-      // 2. Prepare payload
       const wb = new WBMessages(wba_id || "1100000000001", phone_number_id);
       wb.display_phone_number = phone_number_id;
       wb.wa_id = client.wa_id;
 
       const isImage = file.type.startsWith("image/");
       const fileType = isImage ? "image" : "document";
-      
+
       const mediaPayload = {
         id: mediaData.id,
         url: mediaData.url,
         mime_type: mediaData.mime_type,
         sha256: mediaData.id,
-        caption: file.name
+        caption: file.name,
       };
 
       if (!isImage) {
@@ -144,11 +153,7 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
       }
 
       const profileName = client.profile?.name || client.wa_id;
-      const payload = wb.getMediaMessage(fileType, mediaPayload, profileName);
-
-      // IMPORTANT: Inject group context
-      const messageObj = payload.entry[0].changes[0].value.messages[0];
-      messageObj.context = { group_id: group.id };
+      const payload = wb.getGroupMediaMessage(fileType, mediaPayload, profileName, group.id);
 
       await WebhookService.push(payload);
 
@@ -161,9 +166,43 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
     }
   };
 
+  const submitPin = async (operation) => {
+    if (!pinTarget?.id) return;
+    const days = Math.min(30, Math.max(1, parseInt(pinExpirationDays, 10) || 7));
+    const pinBody = {
+      messaging_product: "whatsapp",
+      recipient_type: "group",
+      to: group.id,
+      type: "pin",
+      pin: {
+        type: operation,
+        message_id: pinTarget.id,
+        ...(operation === "pin" ? { expiration_days: days } : {}),
+      },
+    };
+    try {
+      setPinBusy(true);
+      await axios.post(`/v14.0/${phone_number_id}/messages`, pinBody, {
+        headers: authHeaders(),
+      });
+      toast.success(
+        operation === "pin"
+          ? "Pinned Successfully"
+          : "Unpinned Successfully"
+      );
+      setPinTarget(null);
+      await fetchMessages(group.id);
+    } catch (err) {
+      toast.error(
+        err.response?.data?.error?.message || err.message || "Pin request failed"
+      );
+    } finally {
+      setPinBusy(false);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-hidden flex flex-col relative bg-gray-50 dark:bg-gray-900/50">
-      {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
         {messagesLoading ? (
           <div className="flex justify-center py-10">
@@ -177,46 +216,89 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
           messages.map((msg, idx) => {
             const isOutgoing = msg.direction === "outgoing";
             return (
-              <div 
-                key={msg.id || idx} 
+              <div
+                key={msg.id || idx}
                 className={`flex ${isOutgoing ? "justify-end" : "justify-start"}`}
               >
-                <div className={`max-w-[80%] rounded-2xl p-3 shadow-sm ${
-                  isOutgoing 
-                    ? "bg-blue-600 text-white rounded-tr-none" 
-                    : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-tl-none border border-gray-100 dark:border-gray-600"
-                }`}>
+                <div
+                  className={`max-w-[80%] rounded-2xl p-3 shadow-sm ${
+                    isOutgoing
+                      ? "bg-blue-600 text-white rounded-tr-none"
+                      : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-tl-none border border-gray-100 dark:border-gray-600"
+                  }`}
+                >
+                  {msg.pinned && (
+                    <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 mb-1">
+                      Pinned
+                      {msg.pin_expiration_days != null ? ` · ${msg.pin_expiration_days}d` : ""}
+                    </p>
+                  )}
                   {!isOutgoing && (
                     <p className="text-[10px] font-bold opacity-70 mb-1">{msg.from}</p>
                   )}
-                  
-                  {/* Render Content */}
-                  {msg.type === "text" && <p className="text-sm whitespace-pre-wrap">{msg.text?.body || msg.message?.text?.body || msg.content}</p>}
-                  
+
+                  {msg.type === "text" && (
+                    <p className="text-sm whitespace-pre-wrap">
+                      {msg.text?.body || msg.message?.text?.body || msg.content}
+                    </p>
+                  )}
+
                   {msg.type === "image" && (
                     <div className="space-y-1">
-                        <img 
-                            src={msg.message?.image?.link || msg.message?.image?.url || msg.content} 
-                            alt="Shared" 
-                            className="rounded-lg max-h-60 object-cover"
-                        />
-                        {(msg.message?.image?.caption || msg.caption) && <p className="text-sm">{msg.message?.image?.caption || msg.caption}</p>}
+                      <img
+                        src={msg.message?.image?.link || msg.message?.image?.url || msg.content}
+                        alt="Shared"
+                        className="rounded-lg max-h-60 object-cover"
+                      />
+                      {(msg.message?.image?.caption || msg.caption) && (
+                        <p className="text-sm">{msg.message?.image?.caption || msg.caption}</p>
+                      )}
                     </div>
                   )}
 
                   {msg.type === "document" && (
                     <div className="flex items-center gap-2 bg-black/10 p-2 rounded-lg">
-                        <MdInsertDriveFile className="text-2xl" />
-                        <div className="overflow-hidden">
-                            <p className="text-sm font-medium truncate">{msg.message?.document?.caption || msg.message?.document?.filename || "Document"}</p>
-                            <p className="text-[10px] opacity-70">File shared</p>
-                        </div>
+                      <MdInsertDriveFile className="text-2xl" />
+                      <div className="overflow-hidden">
+                        <p className="text-sm font-medium truncate">
+                          {msg.message?.document?.caption || msg.message?.document?.filename || "Document"}
+                        </p>
+                        <p className="text-[10px] opacity-70">File shared</p>
+                      </div>
                     </div>
                   )}
 
-                  <p className={`text-[9px] mt-1 text-right ${isOutgoing ? "text-blue-100" : "text-gray-400"}`}>
-                    {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </p>
+                  <div
+                    className={`flex items-center justify-end gap-1 mt-1 ${
+                      isOutgoing ? "text-blue-100" : "text-gray-400"
+                    }`}
+                  >
+                    <p className="text-[9px]">
+                      {new Date(msg.timestamp || msg.created_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                    {msg.id && (
+                      <>
+                        <button
+                          type="button"
+                          title="Pin or unpin"
+                          onClick={() => setPinTarget(msg)}
+                          className="p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10"
+                        >
+                          <MdPushPin className="text-base text-amber-600 dark:text-amber-400" />
+                        </button>
+                        <GroupMessageStatusActions
+                          message={msg}
+                          phone_number_id={phone_number_id}
+                          wba_id={wba_id || "1100000000001"}
+                          group_id={group.id}
+                          refreshMessages={() => fetchMessages(group.id)}
+                        />
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -225,7 +307,54 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Chat Input Bar */}
+      {pinTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-5 max-w-sm w-full mx-4 shadow-xl border border-gray-200 dark:border-gray-600">
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Pin / unpin message</h4>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 break-all">
+              Message id: {pinTarget.id}
+            </p>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+              Expiration (days, 1–30) — pin only
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={30}
+              value={pinExpirationDays}
+              onChange={(e) => setPinExpirationDays(e.target.value)}
+              className="w-full mb-4 px-3 py-2 border rounded-lg dark:bg-gray-900 dark:border-gray-600 text-gray-900 dark:text-white"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                className="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600"
+                onClick={() => setPinTarget(null)}
+                disabled={pinBusy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 text-sm rounded-lg bg-gray-200 dark:bg-gray-700"
+                disabled={pinBusy}
+                onClick={() => submitPin("unpin")}
+              >
+                Unpin
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 text-sm rounded-lg bg-amber-600 text-white disabled:opacity-50"
+                disabled={pinBusy}
+                onClick={() => submitPin("pin")}
+              >
+                {pinBusy ? "…" : "Pin"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
         <form onSubmit={handleSendMessage} className="flex items-center gap-2">
           <button
@@ -235,7 +364,11 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
             className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
             title="Attach File"
           >
-            {isUploading ? <ImSpinner11 className="animate-spin text-xl" /> : <MdAttachFile className="text-2xl rotate-45" />}
+            {isUploading ? (
+              <ImSpinner11 className="animate-spin text-xl" />
+            ) : (
+              <MdAttachFile className="text-2xl rotate-45" />
+            )}
           </button>
           <input
             type="file"
@@ -244,7 +377,7 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
             className="hidden"
             accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
           />
-          
+
           <input
             type="text"
             value={messageInput}
@@ -252,7 +385,7 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
             placeholder="Type a group message..."
             className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 border-none rounded-full text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
           />
-          
+
           <button
             type="submit"
             disabled={!messageInput.trim() || isSending}

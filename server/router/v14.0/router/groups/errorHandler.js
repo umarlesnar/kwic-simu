@@ -70,6 +70,12 @@ function isValidPhoneNumber(phoneNumber) {
   return typeof phoneNumber === "string" && /^\d{10,15}$/.test(phoneNumber);
 }
 
+/** Join request IDs from Meta are opaque strings; also allow raw wa_id digits. */
+function isValidJoinRequestClientId(id) {
+  if (typeof id !== "string" || id.length < 4 || id.length > 300) return false;
+  return isValidPhoneNumber(id) || /^[A-Za-z0-9+/=_-]+$/.test(id);
+}
+
 /**
  * Validates join_approval_mode
  * @param {string} mode - Join approval mode to validate
@@ -139,6 +145,7 @@ module.exports = {
   isValidPhoneNumberId,
   isValidGroupId,
   isValidPhoneNumber,
+  isValidJoinRequestClientId,
   isValidJoinApprovalMode,
   validateRequiredFields,
   validatePhoneNumbersArray,

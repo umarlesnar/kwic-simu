@@ -143,14 +143,14 @@ function GroupDetailsModal({
     }
   };
 
-  const handleApproveJoinRequest = async (waId) => {
+  const handleApproveJoinRequest = async (joinRequestId) => {
     try {
       setLoading(true);
       await axios.post(
         `/v14.0/${group.id}/join_requests`,
         {
           messaging_product: "whatsapp",
-          join_requests: [waId],
+          join_requests: [joinRequestId],
         },
         {
           headers: {
@@ -168,13 +168,13 @@ function GroupDetailsModal({
     }
   };
 
-  const handleRejectJoinRequest = async (waId) => {
+  const handleRejectJoinRequest = async (joinRequestId) => {
     try {
       setLoading(true);
       await axios.delete(`/v14.0/${group.id}/join_requests`, {
         data: {
           messaging_product: "whatsapp",
-          join_requests: [waId],
+          join_requests: [joinRequestId],
         },
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
@@ -207,7 +207,7 @@ function GroupDetailsModal({
       setLoading(true);
       const response = await axios.post(
         `/v14.0/${group.id}/invite_link`,
-        {},
+        { messaging_product: "whatsapp" },
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
@@ -484,21 +484,27 @@ function GroupDetailsModal({
                   <div className="space-y-2">
                     {joinRequests.map((request) => (
                       <div
-                        key={request.wa_id}
+                        key={request.join_request_id || request.wa_id}
                         className="flex justify-between items-center p-4 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm"
                       >
                         <div>
                           <p className="text-sm font-bold text-gray-900 dark:text-white">
                             {request.wa_id}
                           </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                            {request.join_request_id}
+                          </p>
                           <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Requested: {formatDate(request.requested_at)}
+                            Requested:{" "}
+                            {formatDate(
+                              request.creation_timestamp ?? request.requested_at,
+                            )}
                           </p>
                         </div>
                         <div className="flex gap-2">
                           <button
                             onClick={() =>
-                              handleApproveJoinRequest(request.wa_id)
+                              handleApproveJoinRequest(request.join_request_id)
                             }
                             disabled={loading}
                             className="px-3 py-1 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-700 transition-colors"
@@ -507,7 +513,7 @@ function GroupDetailsModal({
                           </button>
                           <button
                             onClick={() =>
-                              handleRejectJoinRequest(request.wa_id)
+                              handleRejectJoinRequest(request.join_request_id)
                             }
                             disabled={loading}
                             className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700 transition-colors"

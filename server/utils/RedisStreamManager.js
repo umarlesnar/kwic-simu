@@ -31,7 +31,10 @@ class RedisStreamManager {
         this.streamName,
         "*",
         "data",
-        JSON.stringify(data)
+        JSON.stringify({
+          type: "WEBHOOK",
+          payload: data,
+        })
       );
 
       // Trim the stream to avoid excessive growth

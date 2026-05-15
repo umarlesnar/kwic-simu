@@ -3,7 +3,17 @@
  * Defines the structure and factory methods for group-related entities
  */
 
+const crypto = require("crypto");
 const { GROUP_ID_SUFFIX } = require("./constants");
+
+function generateGraphRequestId() {
+  return crypto.randomBytes(16).toString("base64url");
+}
+
+function generateJoinRequestId(waId) {
+  const raw = `${Date.now()}:${waId}:${crypto.randomBytes(6).toString("hex")}`;
+  return Buffer.from(raw, "utf8").toString("base64").replace(/=+$/g, "");
+}
 
 /**
  * Creates a new Group entity
@@ -48,8 +58,11 @@ function createParticipant(waId) {
  * @returns {object} Join request entity
  */
 function createJoinRequest(waId) {
+  const nowSec = Math.floor(Date.now() / 1000);
   return {
+    join_request_id: generateJoinRequestId(waId),
     wa_id: waId,
+    creation_timestamp: nowSec,
     requested_at: new Date().toISOString(),
     status: "pending",
   };
@@ -123,16 +136,20 @@ function calculateInviteLinkExpiration() {
  * @returns {object} Formatted group for response
  */
 function formatGroupResponse(group) {
+  const businessId = group.phone_number_id;
+  const waIds = group.participants.map((p) => (typeof p === "string" ? p : p.wa_id));
+  const totalExcludingBusiness = waIds.filter((id) => id !== businessId).length;
+
   return {
     messaging_product: "whatsapp",
     id: group.id,
     subject: group.subject,
     description: group.description,
     join_approval_mode: group.join_approval_mode,
-    participants: group.participants.map(p => ({
-      wa_id: typeof p === 'string' ? p : p.wa_id
+    participants: group.participants.map((p) => ({
+      wa_id: typeof p === "string" ? p : p.wa_id,
     })),
-    total_participant_count: group.participant_count, // Excluding the business according to docs
+    total_participant_count: totalExcludingBusiness,
     creation_timestamp: Math.floor(new Date(group.created_at).getTime() / 1000),
     suspended: group.suspended || false,
   };
@@ -144,13 +161,18 @@ function formatGroupResponse(group) {
  * @returns {object} Formatted group for list response
  */
 function formatGroupListResponse(group) {
+  const ts = Math.floor(new Date(group.created_at).getTime() / 1000);
+  const businessId = group.phone_number_id;
+  const waIds = (group.participants || []).map((p) => (typeof p === "string" ? p : p.wa_id));
+  const totalExcludingBusiness = waIds.filter((id) => id !== businessId).length;
   return {
     id: group.id,
     subject: group.subject,
+    created_at: String(ts),
     description: group.description,
     join_approval_mode: group.join_approval_mode,
-    total_participant_count: (group.participant_count || 1),
-    creation_timestamp: Math.floor(new Date(group.created_at).getTime() / 1000).toString(),
+    total_participant_count: totalExcludingBusiness,
+    creation_timestamp: String(ts),
   };
 }
 
@@ -160,9 +182,14 @@ function formatGroupListResponse(group) {
  * @returns {object} Formatted join request for response
  */
 function formatJoinRequestResponse(joinRequest) {
+  const creationTs =
+    joinRequest.creation_timestamp != null
+      ? joinRequest.creation_timestamp
+      : Math.floor(new Date(joinRequest.requested_at || Date.now()).getTime() / 1000);
   return {
+    join_request_id: joinRequest.join_request_id || generateJoinRequestId(joinRequest.wa_id),
     wa_id: joinRequest.wa_id,
-    requested_at: joinRequest.requested_at,
+    creation_timestamp: creationTs,
   };
 }
 
@@ -171,6 +198,8 @@ module.exports = {
   createParticipant,
   createJoinRequest,
   createInviteLink,
+  generateGraphRequestId,
+  generateJoinRequestId,
   generateGroupIdBase,
   generateInviteLinkUrl,
   generateInviteLinkToken,

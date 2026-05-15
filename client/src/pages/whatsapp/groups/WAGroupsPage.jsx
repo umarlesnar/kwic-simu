@@ -5,11 +5,23 @@ import { Link } from "react-router-dom";
 import GroupsTable from "./components/table/GroupsTable";
 import GroupCreationForm from "./components/GroupCreationForm";
 import GroupDetailsModal from "./components/GroupDetailsModal";
+import PendingCreationsSection from "./components/PendingCreationsSection";
 import axios from "axios";
 import { io } from "socket.io-client";
 
+function readWbaIdFromToken() {
+  try {
+    const t = localStorage.getItem("token");
+    if (!t) return "1100000000001";
+    const payload = JSON.parse(atob(t.split(".")[1]));
+    return payload.wba_id || "1100000000001";
+  } catch {
+    return "1100000000001";
+  }
+}
 function WAGroupsPage() {
   const { phone_number_id } = useParams();
+  const wba_id = readWbaIdFromToken();
   const navigate = useNavigate();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,9 +31,12 @@ function WAGroupsPage() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [pagination, setPagination] = useState({
     limit: 10,
-    offset: 0,
-    total_count: 0,
+    after: null,
+    before: null,
+    hasNext: false,
+    hasPrev: false,
   });
+  const [pendingRefreshTrigger, setPendingRefreshTrigger] = useState(0);
 
   // Initialize Socket.IO connection
   useEffect(() => {
@@ -34,8 +49,7 @@ function WAGroupsPage() {
 
     socket.on("connect", () => {
       console.log("Socket.IO connected");
-      // Subscribe to group topic
-      socket.emit("subscribe", `group/${phone_number_id}`);
+      socket.emit("subscribe", { topic: `group/${phone_number_id}` });
     });
 
     socket.on("topic-data", (data) => {
@@ -57,50 +71,58 @@ function WAGroupsPage() {
   // Handle real-time updates
   const handleRealtimeUpdate = (data) => {
     if (data.type === "group_delete") {
-      // Remove deleted group
       setGroups((prev) =>
         prev.filter((g) => g.id !== data.group_id)
       );
     } else if (data.type === "group_participants_add" || data.type === "group_participants_remove") {
-      // Update group participants
       setGroups((prev) =>
         prev.map((g) =>
           g.id === data.group_id
-            ? { ...g, total_participant_count: data.total_participant_count || g.total_participant_count }
+            ? { ...g, total_participant_count: data.total_participant_count ?? g.total_participant_count }
             : g
         )
       );
-      // Refresh selected group details
       if (selectedGroup && selectedGroup.id === data.group_id) {
         fetchGroupDetails(data.group_id);
       }
     } else {
-      // Update or add group
       setGroups((prev) => {
         const existing = prev.find((g) => g.id === data.id);
         if (existing) {
-          return prev.map((g) => (g.id === data.id ? data : g));
-        } else {
-          return [data, ...prev];
+          return prev.map((g) => (g.id === data.id ? { ...data, type: undefined } : g));
         }
+        const { type: _t, ...rest } = data;
+        return [{ ...rest }, ...prev];
       });
     }
   };
 
   // Fetch groups
-  const fetchGroups = async (limit = 10, offset = 0) => {
+  const fetchGroups = async (opts = {}) => {
+    const limit = opts.limit ?? pagination.limit ?? 10;
     try {
       setLoading(true);
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (opts.after) params.set("after", opts.after);
+      if (opts.before) params.set("before", opts.before);
       const response = await axios.get(
-        `/v14.0/${phone_number_id}/groups?limit=${limit}&offset=${offset}`,
+        `/v14.0/${phone_number_id}/groups?${params.toString()}`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
           },
         }
       );
-      setGroups(response.data.data || []);
-      setPagination(response.data.paging || { limit, offset, total_count: 0 });
+      const groupsPayload = response.data?.data?.groups ?? response.data?.data ?? [];
+      setGroups(groupsPayload);
+      const p = response.data?.paging || {};
+      setPagination({
+        limit,
+        after: p.cursors?.after ?? null,
+        before: p.cursors?.before ?? null,
+        hasNext: !!p.next,
+        hasPrev: !!p.previous,
+      });
       setError(null);
     } catch (err) {
       console.error("Error fetching groups:", err);
@@ -130,16 +152,18 @@ function WAGroupsPage() {
   // Initial load
   useEffect(() => {
     if (phone_number_id) {
-      fetchGroups();
+      fetchGroups({ limit: 10 });
     }
   }, [phone_number_id]);
 
   // Handle group creation
-  const handleGroupCreated = (newGroup) => {
-    setGroups([newGroup, ...groups]);
+  const handleGroupCreated = (payload) => {
+    if (payload?.request_id) {
+      console.info("Group create request_id:", payload.request_id);
+    }
     setShowCreateForm(false);
-    // Refresh to get updated data
-    fetchGroups();
+    setPendingRefreshTrigger(prev => prev + 1);
+    fetchGroups({ limit: pagination.limit || 10 });
   };
 
   // Handle group deletion
@@ -158,8 +182,12 @@ function WAGroupsPage() {
   };
 
   // Handle pagination
-  const handlePageChange = (newOffset) => {
-    fetchGroups(pagination.limit, newOffset);
+  const handlePageChange = (direction) => {
+    if (direction === "next" && pagination.hasNext) {
+      fetchGroups({ limit: pagination.limit, after: pagination.after });
+    } else if (direction === "prev" && pagination.hasPrev) {
+      fetchGroups({ limit: pagination.limit, before: pagination.before });
+    }
   };
 
   return (
@@ -198,6 +226,13 @@ function WAGroupsPage() {
             {error}
           </div>
         )}
+        
+        <PendingCreationsSection 
+          wba_id={wba_id}
+          phone_number_id={phone_number_id} 
+          refreshTrigger={pendingRefreshTrigger}
+          onCreationProcessed={() => fetchGroups({ limit: pagination.limit || 10 })}
+        />
 
         {loading ? (
           <div className="text-center py-8">
@@ -211,9 +246,10 @@ function WAGroupsPage() {
               onViewDetails={handleViewDetails}
               onGroupDeleted={handleGroupDeleted}
               phone_number_id={phone_number_id}
+              wba_id={wba_id}
               pagination={pagination}
               onPageChange={handlePageChange}
-              onRefresh={() => fetchGroups(pagination.limit, pagination.offset)}
+              onRefresh={() => fetchGroups({ limit: pagination.limit, after: null, before: null })}
             />
           </>
         )}

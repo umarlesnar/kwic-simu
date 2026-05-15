@@ -74,18 +74,8 @@ function GroupCreationForm({ phone_number_id, onClose, onGroupCreated }) {
         }
       );
 
-      // Fetch the created group details
-      const groupResponse = await axios.get(
-        `/v14.0/${response.data.group_id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-          },
-        }
-      );
-
       setLoading(false);
-      onGroupCreated(groupResponse.data);
+      onGroupCreated(response.data);
     } catch (err) {
       console.error("Error creating group:", err);
       setError(
@@ -169,7 +159,7 @@ function GroupCreationForm({ phone_number_id, onClose, onGroupCreated }) {
           {/* Participants Notice */}
           <div className="p-3 bg-blue-50 dark:bg-gray-700 rounded-lg border border-blue-100 dark:border-gray-600">
             <p className="text-sm text-blue-800 dark:text-blue-300">
-              Note: Participants cannot be added during creation. Share the invite link after the group is created.
+              Note: Group creation requires manual approval. Once approved, you can share the invite link.
             </p>
           </div>
 
