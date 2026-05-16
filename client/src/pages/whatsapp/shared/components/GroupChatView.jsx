@@ -59,12 +59,16 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
 
       socket.on("topic-data", (data) => {
         if (data.data) {
+          const normalized = {
+            ...data.data,
+            from: data.data.from ?? data.data.message?.from ?? data.data.wa_id,
+          };
           setMessages((prev) => {
-            const id = data.data.id;
+            const id = normalized.id;
             const idx = prev.findIndex((m) => m.id === id);
-            if (idx === -1) return [...prev, data.data];
+            if (idx === -1) return [...prev, normalized];
             const next = [...prev];
-            next[idx] = { ...next[idx], ...data.data };
+            next[idx] = { ...next[idx], ...normalized };
             return next;
           });
         }
@@ -81,7 +85,11 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
       try {
         setMessagesLoading(true);
         const response = await businessService.getChatMessages(phone_number_id, groupId);
-        setMessages(response.data || []);
+        const list = (response.data || []).map((m) => ({
+          ...m,
+          from: m.from ?? m.message?.from ?? m.wa_id,
+        }));
+        setMessages(list);
       } catch (err) {
         toast.error("Failed to fetch messages: " + err.message);
       } finally {
@@ -214,7 +222,12 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
           </div>
         ) : (
           messages.map((msg, idx) => {
-            const isOutgoing = msg.direction === "outgoing";
+            const senderId = msg.from ?? msg.sender ?? msg.wa_id;
+            const isOwnMessage =
+              client?.wa_id &&
+              senderId != null &&
+              String(senderId) === String(client.wa_id);
+            const isOutgoing = isOwnMessage;
             return (
               <div
                 key={msg.id || idx}
@@ -233,8 +246,8 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
                       {msg.pin_expiration_days != null ? ` · ${msg.pin_expiration_days}d` : ""}
                     </p>
                   )}
-                  {!isOutgoing && (
-                    <p className="text-[10px] font-bold opacity-70 mb-1">{msg.from}</p>
+                  {!isOutgoing && senderId && (
+                    <p className="text-[10px] font-bold opacity-70 mb-1">{senderId}</p>
                   )}
 
                   {msg.type === "text" && (

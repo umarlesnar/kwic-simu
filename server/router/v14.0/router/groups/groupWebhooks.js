@@ -41,7 +41,8 @@ async function emitGroupLifecycleWebhook(
   options = {}
 ) {
   try {
-    const requestId = options.requestId || generateGraphRequestId();
+    const requestId =
+      options.requestId || groupData?.request_id || generateGraphRequestId();
     const timestamp = tsString();
     const groupObj = {
       timestamp,

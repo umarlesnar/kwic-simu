@@ -40,7 +40,7 @@ export function buildGroupCreateFail(wba_id, phone_number_id, group) {
                   type: "group_create",
                   subject: group?.subject || "Simulated subject",
                   description: group?.description || "",
-                  request_id: `req_create_fail_${ts}`,
+                  request_id: group?.request_id,
                   group_id: group?.id,
                   errors: err(400, "Creation failed", "Could not create group", "Simulated group_create failure"),
                 },
@@ -70,7 +70,7 @@ export function buildGroupDeleteFail(wba_id, phone_number_id, group) {
                   timestamp: ts,
                   group_id: group.id,
                   type: "group_delete",
-                  request_id: `req_delete_fail_${ts}`,
+                  request_id: group?.request_id,
                   errors: err(131051, "Delete failed", "Unable to delete group", "Simulated group_delete failure"),
                 },
               ],
@@ -99,7 +99,7 @@ export function buildGroupParticipantsRemovePartialFail(wba_id, phone_number_id,
                   timestamp: ts,
                   group_id: group.id,
                   type: "group_participants_remove",
-                  request_id: `req_remove_partial_${ts}`,
+                  request_id: group?.request_id,
                   initiated_by: "business",
                   removed_participants: [{ input: "15550000001" }],
                   failed_participants: [
@@ -143,7 +143,7 @@ export function buildGroupParticipantsRemoveTotalFail(wba_id, phone_number_id, g
                   timestamp: ts,
                   group_id: group.id,
                   type: "group_participants_remove",
-                  request_id: `req_remove_fail_${ts}`,
+                  request_id: group?.request_id,
                   initiated_by: "business",
                   failed_participants: [{ input: "15550000003" }, { input: "15550000004" }],
                   errors: err(131054, "Remove failed", "No participants removed", "Simulated total remove failure"),
@@ -174,7 +174,7 @@ export function buildGroupSettingsPartialFail(wba_id, phone_number_id, group) {
                   timestamp: ts,
                   group_id: group.id,
                   type: "group_settings_update",
-                  request_id: `req_settings_partial_${ts}`,
+                  request_id: group?.request_id,
                   profile_picture: {
                     mime_type: "image/jpeg",
                     update_successful: true,
@@ -218,7 +218,7 @@ export function buildGroupSettingsTotalFail(wba_id, phone_number_id, group) {
                 {
                   timestamp: ts,
                   group_id: group.id,
-                  request_id: `req_settings_total_${ts}`,
+                  request_id: group?.request_id,
                   type: "group_settings_update",
                   profile_picture: {
                     mime_type: "image/jpeg",
@@ -326,6 +326,280 @@ export function buildGroupMessageFailed(wba_id, phone_number_id, group, messageI
               ],
             },
             field: "messages",
+          },
+        ],
+      },
+    ],
+  };
+}
+export function buildGroupCreateSuccess(wba_id, phone_number_id, group) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: wba_id,
+        changes: [
+          {
+            value: {
+              ...meta(phone_number_id),
+              groups: [
+                {
+                  timestamp: ts,
+                  type: "group_create",
+                  subject: group?.subject || "Simulated Group",
+                  description: group?.description || "",
+                  request_id: group?.request_id,
+                  group_id: group?.id || `${Date.now()}@g.us`,
+                  invite_link: group?.invite_link,
+                  join_approval_mode: group?.join_approval_mode,
+                },
+              ],
+            },
+            field: "group_lifecycle_update",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildGroupDeleteSuccess(wba_id, phone_number_id, group) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: wba_id,
+        changes: [
+          {
+            value: {
+              ...meta(phone_number_id),
+              groups: [
+                {
+                  timestamp: ts,
+                  type: "group_delete",
+                  group_id: group.id,
+                  request_id: group?.request_id,
+                },
+              ],
+            },
+            field: "group_lifecycle_update",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildGroupSettingsUpdateSuccess(
+  wba_id,
+  phone_number_id,
+  group,
+  { subject, description, join_approval_mode } = {}
+) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  const payload = {
+    timestamp: ts,
+    group_id: group.id,
+    type: "group_settings_update",
+    request_id: group?.request_id,
+  };
+
+  if (subject !== undefined) {
+    payload.group_subject = { text: subject, update_successful: true };
+  }
+  if (description !== undefined) {
+    payload.group_description = { text: description, update_successful: true };
+  }
+  if (join_approval_mode !== undefined) {
+    payload.join_approval_mode = join_approval_mode;
+  }
+
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: wba_id,
+        changes: [
+          {
+            value: {
+              ...meta(phone_number_id),
+              groups: [payload],
+            },
+            field: "group_settings_update",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildGroupParticipantsAddInviteLinkSuccess(
+  wba_id,
+  phone_number_id,
+  group_id,
+  wa_id
+) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: wba_id,
+        changes: [
+          {
+            value: {
+              ...meta(phone_number_id),
+              groups: [
+                {
+                  timestamp: ts,
+                  group_id,
+                  type: "group_participants_add",
+                  reason: "invite_link",
+                  added_participants: [{ wa_id }],
+                },
+              ],
+            },
+            field: "group_participants_update",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildGroupParticipantsRemoveSuccess(
+  wba_id,
+  phone_number_id,
+  group,
+  removed_participants
+) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: wba_id,
+        changes: [
+          {
+            value: {
+              ...meta(phone_number_id),
+              groups: [
+                {
+                  timestamp: ts,
+                  group_id: group.id,
+                  type: "group_participants_remove",
+                  request_id: group?.request_id,
+                  initiated_by: "business",
+                  removed_participants,
+                },
+              ],
+            },
+            field: "group_participants_update",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildGroupJoinRequestsApprovedSuccess(
+  wba_id,
+  phone_number_id,
+  group_id,
+  approvedRows
+) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: wba_id,
+        changes: [
+          {
+            value: {
+              ...meta(phone_number_id),
+              groups: [
+                {
+                  timestamp: ts,
+                  group_id,
+                  type: "group_participants_add",
+                  reason: "invite_link",
+                  added_participants: approvedRows.map((r) => ({
+                    input: r.input,
+                    wa_id: r.wa_id,
+                  })),
+                },
+              ],
+            },
+            field: "group_participants_update",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildGroupJoinRequestCreated(
+  wba_id,
+  phone_number_id,
+  group,
+  { wa_id, join_request_id, reason = "invite_link" } = {}
+) {
+  return buildGroupJoinRequestLifecycle(
+    wba_id,
+    phone_number_id,
+    group,
+    "group_join_request_created",
+    { wa_id, join_request_id, reason }
+  );
+}
+
+export function buildGroupJoinRequestRevoked(
+  wba_id,
+  phone_number_id,
+  group,
+  { wa_id, join_request_id, reason = "invite_link" } = {}
+) {
+  return buildGroupJoinRequestLifecycle(
+    wba_id,
+    phone_number_id,
+    group,
+    "group_join_request_revoked",
+    { wa_id, join_request_id, reason }
+  );
+}
+
+function buildGroupJoinRequestLifecycle(
+  wba_id,
+  phone_number_id,
+  group,
+  type,
+  { wa_id, join_request_id, reason = "invite_link" }
+) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  const groupPayload = {
+    timestamp: ts,
+    group_id: group.id,
+    type,
+    reason,
+    wa_id: wa_id || "15550009999",
+  };
+  if (join_request_id) groupPayload.join_request_id = join_request_id;
+
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: wba_id,
+        changes: [
+          {
+            value: {
+              ...meta(phone_number_id),
+              groups: [groupPayload],
+            },
+            field: "group_participants_update",
           },
         ],
       },

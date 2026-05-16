@@ -9,6 +9,7 @@ const {
   INVITE_LINK_TTL,
   GROUP_CREATE_DELAY_AUTO_MS,
   GROUP_CREATE_DELAY_APPROVAL_MS,
+  JOIN_APPROVAL_MODES,
 } = require("./constants");
 
 const {
@@ -715,9 +716,9 @@ module.exports = {
     try {
       const redisManager = await redisManagerWrapper.getClient();
       
-      // Extract token from URL
-      const urlParts = inviteLinkUrl.split('/');
-      const token = urlParts[urlParts.length - 1];
+      // Extract token from URL (strip query/hash)
+      const urlParts = inviteLinkUrl.split("/");
+      const token = urlParts[urlParts.length - 1].split("?")[0].split("#")[0];
       
       const tokenKey = REDIS_KEY_PATTERNS.GLOBAL_INVITE_LINK_MAP(token);
       const mappingData = await redisManager.get(tokenKey);
@@ -742,12 +743,30 @@ module.exports = {
         return { success: false, error: "User already in group", group_id };
       }
       
-      if (group.join_approval_mode === "auto_approve") {
-        // Add to group
-        group.participants.push(waId);
-        group.participant_count = group.participants.length;
-        await redisManager.set(groupKey, JSON.stringify(group));
-        return { success: true, status: "joined", group_id, group, phone_number_id };
+      const mode = group.join_approval_mode || JOIN_APPROVAL_MODES.AUTO_APPROVE;
+
+      if (mode === JOIN_APPROVAL_MODES.AUTO_APPROVE) {
+        const addResult = await addParticipantsToGroup(
+          redisManagerWrapper,
+          phone_number_id,
+          group,
+          [waId]
+        );
+        if (addResult.added_participants.length === 0) {
+          return {
+            success: false,
+            error: "User already in group",
+            group_id,
+          };
+        }
+        return {
+          success: true,
+          status: "joined",
+          group_id,
+          group: addResult.group,
+          phone_number_id,
+          wa_id: waId,
+        };
       } else {
         // Add to join requests
         const joinRequestsKey = REDIS_KEY_PATTERNS.GROUP_JOIN_REQUESTS(phone_number_id, group_id);

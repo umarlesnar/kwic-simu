@@ -16,6 +16,7 @@ import {
   MdRefresh
 } from "react-icons/md";
 import GroupChatView from "../../../shared/components/GroupChatView";
+import { joinGroupViaInvite } from "../../../groups/utils/groupWebhookClientActions";
 
 const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, initialGroupId }) => {
   const [view, setView] = useState("list"); // 'list', 'chat', 'join'
@@ -81,8 +82,12 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, i
 
     try {
       setIsJoining(true);
-      const response = await businessService.joinGroup(inviteLink.trim(), client.wa_id);
-      
+      const response = await joinGroupViaInvite({
+        invite_link: inviteLink,
+        wa_id: client.wa_id,
+        wba_id,
+      });
+
       if (response.status === "joined") {
         toast.success("Successfully joined the group!");
         setInviteLink("");

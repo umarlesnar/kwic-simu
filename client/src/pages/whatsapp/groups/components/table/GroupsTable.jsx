@@ -1,7 +1,11 @@
 import React from "react";
 import { MdDelete, MdEdit, MdInfo, MdRefresh } from "react-icons/md";
 import axios from "axios";
+import { WebhookService } from "@api/WebhookService";
 import GroupFailedWebhookMenu from "../GroupFailedWebhookMenu";
+import { buildGroupDeleteSuccess } from "../../utils/wbGroupFailedWebhooks";
+import { resolveWbaIdForPhone } from "../../utils/resolveWbaId";
+import { groupsWebhookAuthHeaders } from "../../utils/groupsApiHeaders";
 
 function GroupsTable({
   groups,
@@ -13,15 +17,19 @@ function GroupsTable({
   onPageChange,
   onRefresh,
 }) {
-  const handleDelete = async (groupId) => {
+  const handleDelete = async (group) => {
     if (window.confirm("Are you sure you want to delete this group?")) {
       try {
-        await axios.delete(`/v14.0/${groupId}`, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-          },
+        await axios.delete(`/v14.0/${group.id}`, {
+          headers: groupsWebhookAuthHeaders(),
         });
-        onGroupDeleted(groupId);
+        const resolvedWbaId = wba_id || (await resolveWbaIdForPhone(phone_number_id));
+        if (resolvedWbaId) {
+          await WebhookService.push(
+            buildGroupDeleteSuccess(resolvedWbaId, phone_number_id, group)
+          );
+        }
+        onGroupDeleted(group.id);
       } catch (error) {
         console.error("Error deleting group:", error);
         alert("Failed to delete group");
@@ -134,7 +142,7 @@ function GroupsTable({
                         <MdInfo className="text-lg" />
                       </button>
                       <button
-                        onClick={() => handleDelete(group.id)}
+                        onClick={() => handleDelete(group)}
                         className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-gray-700 rounded transition-colors"
                         title="Delete"
                       >

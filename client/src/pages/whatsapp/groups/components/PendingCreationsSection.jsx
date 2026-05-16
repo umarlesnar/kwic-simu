@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { MdCheck, MdClose, MdRefresh } from "react-icons/md";
+import { WebhookService } from "@api/WebhookService";
+import { buildGroupCreateSuccess, buildGroupCreateFail } from "../utils/wbGroupFailedWebhooks";
+import { resolveWbaIdForPhone } from "../utils/resolveWbaId";
+import { groupsWebhookAuthHeaders } from "../utils/groupsApiHeaders";
 
 function PendingCreationsSection({ wba_id, phone_number_id, refreshTrigger, onCreationProcessed }) {
   const [pendingCreations, setPendingCreations] = useState([]);
@@ -35,18 +39,30 @@ function PendingCreationsSection({ wba_id, phone_number_id, refreshTrigger, onCr
     }
   }, [phone_number_id, refreshTrigger]);
 
-  const handleApprove = async (requestId) => {
+  const effectiveWbaId = async () =>
+    wba_id || (await resolveWbaIdForPhone(phone_number_id));
+
+  const handleApprove = async (pending) => {
+    const requestId = pending.request_id;
     try {
       setProcessingId(requestId);
-      await axios.post(
+      const response = await axios.post(
         `/v14.0/${phone_number_id}/groups/pending/${requestId}/approve`,
         {},
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-          },
-        }
+        { headers: groupsWebhookAuthHeaders() }
       );
+
+      const createdGroup = response.data.group;
+      const resolvedWbaId = await effectiveWbaId();
+      if (createdGroup && resolvedWbaId) {
+        const payload = buildGroupCreateSuccess(
+          resolvedWbaId,
+          phone_number_id,
+          { ...createdGroup, request_id: createdGroup.request_id || requestId }
+        );
+        await WebhookService.push(payload);
+      }
+
       setPendingCreations((prev) => prev.filter((p) => p.request_id !== requestId));
       if (onCreationProcessed) onCreationProcessed();
     } catch (err) {
@@ -57,19 +73,23 @@ function PendingCreationsSection({ wba_id, phone_number_id, refreshTrigger, onCr
     }
   };
 
-  const handleReject = async (requestId) => {
+  const handleReject = async (pending) => {
+    const requestId = pending.request_id;
     if (!window.confirm("Are you sure you want to reject this group creation?")) return;
     try {
       setProcessingId(requestId);
       await axios.post(
         `/v14.0/${phone_number_id}/groups/pending/${requestId}/reject`,
         {},
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-          },
-        }
+        { headers: groupsWebhookAuthHeaders() }
       );
+
+      const resolvedWbaId = await effectiveWbaId();
+      if (resolvedWbaId) {
+        const payload = buildGroupCreateFail(resolvedWbaId, phone_number_id, pending);
+        await WebhookService.push(payload);
+      }
+
       setPendingCreations((prev) => prev.filter((p) => p.request_id !== requestId));
     } catch (err) {
       console.error("Error rejecting group creation:", err);
@@ -127,14 +147,14 @@ function PendingCreationsSection({ wba_id, phone_number_id, refreshTrigger, onCr
 
             <div className="flex items-center gap-2 shrink-0">
               <button
-                onClick={() => handleReject(pending.request_id)}
+                onClick={() => handleReject(pending)}
                 disabled={processingId === pending.request_id}
                 className="flex items-center gap-1 px-3 py-1.5 border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors text-sm font-medium disabled:opacity-50"
               >
                 <MdClose /> Reject
               </button>
               <button
-                onClick={() => handleApprove(pending.request_id)}
+                onClick={() => handleApprove(pending)}
                 disabled={processingId === pending.request_id}
                 className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-50"
               >

@@ -34,6 +34,7 @@ function createGroup(data) {
     invite_link: data.invite_link || "",
     invite_link_expiration: data.invite_link_expiration || 0,
     join_requests: data.join_requests || [],
+    request_id: data.request_id || null,
     created_at: data.created_at || now,
     updated_at: data.updated_at || now,
   };
@@ -152,6 +153,7 @@ function formatGroupResponse(group) {
     total_participant_count: totalExcludingBusiness,
     creation_timestamp: Math.floor(new Date(group.created_at).getTime() / 1000),
     suspended: group.suspended || false,
+    ...(group.request_id ? { request_id: group.request_id } : {}),
   };
 }
 
@@ -173,6 +175,7 @@ function formatGroupListResponse(group) {
     join_approval_mode: group.join_approval_mode,
     total_participant_count: totalExcludingBusiness,
     creation_timestamp: String(ts),
+    ...(group.request_id ? { request_id: group.request_id } : {}),
   };
 }
 

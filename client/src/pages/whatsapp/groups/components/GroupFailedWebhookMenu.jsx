@@ -4,7 +4,10 @@ import { toast } from "react-toastify";
 import { WebhookService } from "@api/WebhookService";
 import {
   buildGroupCreateFail,
+  buildGroupCreateSuccess,
   buildGroupDeleteFail,
+  buildGroupJoinRequestCreated,
+  buildGroupJoinRequestRevoked,
   buildGroupMessageFailed,
   buildGroupParticipantsRemovePartialFail,
   buildGroupParticipantsRemoveTotalFail,
@@ -15,6 +18,7 @@ import {
 } from "../utils/wbGroupFailedWebhooks";
 
 const scenarios = [
+  { id: "create_success", label: "group_create (success)", fn: buildGroupCreateSuccess },
   { id: "create_fail", label: "group_create (fail)", fn: buildGroupCreateFail },
   { id: "delete_fail", label: "group_delete (fail)", fn: buildGroupDeleteFail },
   { id: "remove_partial", label: "participants_remove (partial fail)", fn: buildGroupParticipantsRemovePartialFail },
@@ -24,6 +28,26 @@ const scenarios = [
   { id: "suspend", label: "group_suspend", fn: buildGroupSuspend },
   { id: "suspend_cleared", label: "group_suspend_cleared", fn: buildGroupSuspendCleared },
   { id: "msg_failed", label: "group message status failed", fn: buildGroupMessageFailed },
+  {
+    id: "join_request_created",
+    label: "join request created (user requests)",
+    fn: (wba, pn, g) =>
+      buildGroupJoinRequestCreated(wba, pn, g, {
+        wa_id: "15550009999",
+        join_request_id: g?.join_requests?.[0]?.join_request_id || "sim_join_req_id",
+        reason: "invite_link",
+      }),
+  },
+  {
+    id: "join_request_revoked",
+    label: "join request revoked (user cancels)",
+    fn: (wba, pn, g) =>
+      buildGroupJoinRequestRevoked(wba, pn, g, {
+        wa_id: "15550009999",
+        join_request_id: g?.join_requests?.[0]?.join_request_id || "sim_join_req_id",
+        reason: "invite_link",
+      }),
+  },
 ];
 
 export default function GroupFailedWebhookMenu({ phone_number_id, wba_id, group }) {

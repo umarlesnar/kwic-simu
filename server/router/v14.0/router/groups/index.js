@@ -17,38 +17,11 @@ const {
   GROUP_ERROR_CODES,
 } = require("./constants");
 
-// --- Smart WBA Resolver Middleware ---
-const resolveWbaIdMiddleware = async (req, res, next) => {
-  try {
-    // If we have a phone_number_id in params and an opaque/fallback token
-    if (req.params.phone_number_id && (!req.user || req.user.opaque || req.user.wba_id === "1100000000001")) {
-      const pattern = `whatsapp:*:${req.params.phone_number_id}`;
-      const results = await req.redisManager.getValuesByPattern(pattern);
-      if (results.length > 0) {
-        const discoveredWbaId = results[0].key.split(":")[1];
-        if (!req.user) req.user = {};
-        req.user.wba_id = discoveredWbaId;
-      }
-    }
-    // If we only have group_id, resolve phone_number_id first
-    else if (req.params.group_id && (!req.user || req.user.opaque || req.user.wba_id === "1100000000001")) {
-      const pnId = await getPhoneNumberIdByGroupId(req.redisManager, req.params.group_id);
-      if (pnId) {
-        const pattern = `whatsapp:*:${pnId}`;
-        const results = await req.redisManager.getValuesByPattern(pattern);
-        if (results.length > 0) {
-          const discoveredWbaId = results[0].key.split(":")[1];
-          if (!req.user) req.user = {};
-          req.user.wba_id = discoveredWbaId;
-          req.user.phone_number_id = pnId;
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Error in Smart WBA Resolver:", err);
-  }
-  next();
-};
+const {
+  resolveWbaIdMiddleware,
+  resolveWbaIdForRequest,
+  getResolvedWbaId,
+} = require("./wbaResolver");
 
 const {
   validateCreateGroupRequest,
@@ -90,15 +63,22 @@ const {
 } = require("./groupService");
 
 const {
-  emitGroupLifecycleWebhook,
   emitBatchParticipantsWebhooks,
-  emitGroupParticipantsAddInviteLink,
-  emitGroupJoinRequestLifecycle,
-  emitGroupJoinRequestsApproved,
-  emitGroupParticipantsRemove,
-  emitGroupSettingsUpdateCombined,
   generateGraphRequestId,
 } = require("./groupWebhooks");
+
+const {
+  buildGroupCreateSuccess,
+  buildGroupCreateFail,
+  buildGroupDeleteSuccess,
+  buildGroupSettingsUpdateSuccess,
+  buildGroupParticipantsAddInviteLinkSuccess,
+  buildGroupParticipantsRemoveSuccess,
+  buildGroupJoinRequestsApprovedSuccess,
+  buildGroupJoinRequestLifecycle,
+} = require("./groupWebhookPayloads");
+
+const { pushGroupWebhookUnlessClient } = require("./groupWebhookPush");
 
 const {
   formatGroupResponse,
@@ -111,7 +91,6 @@ async function finalizeGroupCreationJob({
   redisManager,
   redisStreamManager,
   requestId,
-  wbaId,
 }) {
   const pending = await loadPendingGroupCreation(redisManager, requestId);
   if (!pending) return;
@@ -125,17 +104,8 @@ async function finalizeGroupCreationJob({
       description: pending.description || "",
       join_approval_mode: pending.join_approval_mode || "auto_approve",
       participants: [],
+      request_id: pending.request_id,
     });
-
-    await emitGroupLifecycleWebhook(
-      redisStreamManager,
-      pending.phone_number_id,
-      group.id,
-      "group_create",
-      group,
-      wbaId,
-      { requestId: pending.request_id }
-    );
 
     if (io) {
       io.to(`group/${pending.phone_number_id}`).emit("topic-data", {
@@ -147,27 +117,11 @@ async function finalizeGroupCreationJob({
         timestamp: new Date().toISOString(),
       });
     }
+
+    return group;
   } catch (error) {
     console.error("finalizeGroupCreationJob:", error);
-    await emitGroupLifecycleWebhook(
-      redisStreamManager,
-      pending.phone_number_id,
-      undefined,
-      "group_create",
-      { subject: pending.subject, description: pending.description },
-      wbaId,
-      {
-        requestId: pending.request_id,
-        errors: [
-          {
-            code: String(GROUP_ERROR_CODES.BAD_GROUP),
-            message: error.message || ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
-            title: "Group create failed",
-            error_data: { details: String(error.message || "unknown") },
-          },
-        ],
-      }
-    );
+    throw error;
   }
 }
 
@@ -257,7 +211,6 @@ router.post("/:phone_number_id/groups", resolveWbaIdMiddleware, async (req, res)
       );
     }
 
-    const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
     const mode = join_approval_mode || "auto_approve";
 
     const pending = await savePendingGroupCreation(req.redisManager, {
@@ -334,6 +287,38 @@ router.get("/:phone_number_id/groups", resolveWbaIdMiddleware, async (req, res) 
 });
 
 /**
+ * GET /:phone_number_id/groups/context
+ * Resolved WBA id for webhook simulation (from phone number mapping in Redis)
+ */
+router.get(
+  "/:phone_number_id/groups/context",
+  resolveWbaIdMiddleware,
+  async (req, res) => {
+    try {
+      const wbaId = getResolvedWbaId(req);
+      if (!wbaId) {
+        return sendErrorResponse(
+          res,
+          HTTP_STATUS.NOT_FOUND,
+          "WhatsApp Business Account not found for this phone number"
+        );
+      }
+      return res.status(HTTP_STATUS.OK).json({
+        wba_id: wbaId,
+        phone_number_id: req.params.phone_number_id,
+      });
+    } catch (error) {
+      console.error("Error resolving groups context:", error);
+      sendErrorResponse(
+        res,
+        HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        ERROR_MESSAGES.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+);
+
+/**
  * GET /:phone_number_id/groups/pending
  * List all pending group creation requests
  */
@@ -370,7 +355,6 @@ router.post(
   async (req, res) => {
     try {
       const { phone_number_id, request_id } = req.params;
-      const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
 
       const pending = await loadPendingGroupCreation(req.redisManager, request_id);
       if (!pending) {
@@ -389,16 +373,25 @@ router.post(
         );
       }
 
-      await finalizeGroupCreationJob({
+      const group = await finalizeGroupCreationJob({
         redisManager: req.redisManager,
         redisStreamManager: req.redisStreamManager,
         requestId: request_id,
-        wbaId,
       });
+
+      const wbaId = getResolvedWbaId(req);
+      if (wbaId && group) {
+        await pushGroupWebhookUnlessClient(
+          req,
+          req.redisStreamManager,
+          buildGroupCreateSuccess(wbaId, phone_number_id, group)
+        );
+      }
 
       res.status(HTTP_STATUS.OK).json({
         success: true,
         message: "Group creation approved and processed",
+        group,
       });
     } catch (error) {
       console.error("Error approving group creation:", error);
@@ -439,27 +432,16 @@ router.post(
         );
       }
 
+      const wbaId = getResolvedWbaId(req);
+      if (wbaId) {
+        await pushGroupWebhookUnlessClient(
+          req,
+          req.redisStreamManager,
+          buildGroupCreateFail(wbaId, phone_number_id, pending)
+        );
+      }
+
       await removePendingGroupCreation(req.redisManager, request_id);
-      
-      const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
-      await emitGroupLifecycleWebhook(
-        req.redisStreamManager,
-        phone_number_id,
-        null,
-        "group_create",
-        pending,
-        wbaId,
-        {
-          requestId: request_id,
-          errors: [
-            {
-              code: GROUP_ERROR_CODES.GROUP_CREATION_DISABLED,
-              message: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_CREATION_DISABLED],
-              title: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_CREATION_DISABLED],
-            },
-          ],
-        }
-      );
 
       res.status(HTTP_STATUS.OK).json({
         success: true,
@@ -522,7 +504,10 @@ router.get("/:phone_number_id/groups/:group_id", async (req, res) => {
  * POST /:phone_number_id/groups/:group_id (LEGACY/INTERNAL)
  * Update group settings
  */
-router.post("/:phone_number_id/groups/:group_id", async (req, res) => {
+router.post(
+  "/:phone_number_id/groups/:group_id",
+  resolveWbaIdMiddleware,
+  async (req, res) => {
   try {
     // Validate request
     const validation = validateUpdateGroupRequest(req);
@@ -550,39 +535,40 @@ router.post("/:phone_number_id/groups/:group_id", async (req, res) => {
       );
     }
 
-    const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
-    const requestId = generateGraphRequestId();
-    const parts = {};
+    const settingsParts = {};
 
     if (subject !== undefined) {
       group.subject = subject;
-      parts.group_subject = { text: subject, update_successful: true };
+      settingsParts.subject = subject;
     }
 
     if (description !== undefined) {
       group.description = description;
-      parts.group_description = { text: description, update_successful: true };
+      settingsParts.description = description;
     }
 
     if (join_approval_mode !== undefined) {
       group.join_approval_mode = join_approval_mode;
+      settingsParts.join_approval_mode = join_approval_mode;
     }
 
-    // Update group in Redis
     const updatedGroup = await updateGroupInRedis(
       req.redisManager,
       phone_number_id,
       group
     );
 
-    if (Object.keys(parts).length > 0) {
-      await emitGroupSettingsUpdateCombined(
+    const wbaId = getResolvedWbaId(req);
+    if (wbaId && Object.keys(settingsParts).length > 0) {
+      await pushGroupWebhookUnlessClient(
+        req,
         req.redisStreamManager,
-        phone_number_id,
-        group_id,
-        wbaId,
-        requestId,
-        parts
+        buildGroupSettingsUpdateSuccess(
+          wbaId,
+          phone_number_id,
+          updatedGroup,
+          settingsParts
+        )
       );
     }
 
@@ -638,20 +624,16 @@ router.delete("/:phone_number_id/groups/:group_id", resolveWbaIdMiddleware, asyn
       );
     }
 
-    // Delete group from Redis
     await deleteGroupFromRedis(req.redisManager, phone_number_id, group_id);
 
-    const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
-    const requestId = generateGraphRequestId();
-    await emitGroupLifecycleWebhook(
-      req.redisStreamManager,
-      phone_number_id,
-      group_id,
-      "group_delete",
-      group,
-      wbaId,
-      { requestId }
-    );
+    const wbaId = getResolvedWbaId(req);
+    if (wbaId) {
+      await pushGroupWebhookUnlessClient(
+        req,
+        req.redisStreamManager,
+        buildGroupDeleteSuccess(wbaId, phone_number_id, group)
+      );
+    }
 
     const io = require("../../../../utils/ws/SocketManager").getIO();
     if (io) {
@@ -665,6 +647,8 @@ router.delete("/:phone_number_id/groups/:group_id", resolveWbaIdMiddleware, asyn
     res.status(HTTP_STATUS.OK).json({
       messaging_product: "whatsapp",
       success: true,
+      group_id,
+      request_id: group.request_id || null,
     });
   } catch (error) {
     console.error("Error deleting group:", error);
@@ -730,16 +714,17 @@ router.post(
       phone_numbers
     );
 
-    // Emit webhooks for each added participant
-    const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
-    await emitBatchParticipantsWebhooks(
-      req.redisStreamManager,
-      phone_number_id,
-      group_id,
-      "participant_added",
-      result.added_participants,
-      wbaId
-    );
+    const wbaId = getResolvedWbaId(req);
+    if (wbaId && result.added_participants.length > 0) {
+      await emitBatchParticipantsWebhooks(
+        req.redisStreamManager,
+        phone_number_id,
+        group_id,
+        "participant_added",
+        result.added_participants,
+        wbaId
+      );
+    }
 
     // Emit Socket.IO event
     const io = require("../../../../utils/ws/SocketManager").getIO();
@@ -808,8 +793,8 @@ router.delete(
 
       const removed_participants = [];
       const failed_participants = [];
-      const requestId = generateGraphRequestId();
-      const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
+      const requestId = group.request_id || generateGraphRequestId();
+      const wbaId = getResolvedWbaId(req);
 
       for (const wa_id of waIds) {
         const updatedGroup = await removeParticipantFromGroup(
@@ -858,19 +843,16 @@ router.delete(
         );
       }
 
-      await emitGroupParticipantsRemove(
-        req.redisStreamManager,
-        phone_number_id,
-        group_id,
-        wbaId,
-        {
-          requestId,
-          initiated_by: "business",
-          removed_participants,
-          failed_participants,
-          errors: groupErrors,
-        }
-      );
+      if (wbaId && removed_participants.length > 0) {
+        await pushGroupWebhookUnlessClient(
+          req,
+          req.redisStreamManager,
+          buildGroupParticipantsRemoveSuccess(wbaId, phone_number_id, group, {
+            removed_participants,
+            request_id: requestId,
+          })
+        );
+      }
 
       // Emit Socket.IO event
       const io = require("../../../../utils/ws/SocketManager").getIO();
@@ -1143,16 +1125,24 @@ router.post(
       // Add join request
       const jr = await addJoinRequest(req.redisManager, phone_number_id, group_id, wa_id);
 
-      const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
-      await emitGroupJoinRequestLifecycle(
-        req.redisStreamManager,
-        phone_number_id,
-        group_id,
-        "group_join_request_created",
-        wa_id,
-        wbaId,
-        jr.join_request_id
-      );
+      const wbaId = getResolvedWbaId(req);
+      if (wbaId) {
+        await pushGroupWebhookUnlessClient(
+          req,
+          req.redisStreamManager,
+          buildGroupJoinRequestLifecycle(
+            wbaId,
+            phone_number_id,
+            group_id,
+            "group_join_request_created",
+            {
+              wa_id,
+              join_request_id: jr.join_request_id,
+              reason: "invite_link",
+            }
+          )
+        );
+      }
 
       // Emit Socket.IO event
       const io = require("../../../../utils/ws/SocketManager").getIO();
@@ -1225,7 +1215,7 @@ router.post(
       const approved_join_requests = [];
       const failed_join_requests = [];
       const approvedRows = [];
-      const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
+      const wbaId = getResolvedWbaId(req);
 
       for (const clientId of join_requests) {
         const joinRequestsList = await getJoinRequests(
@@ -1268,13 +1258,16 @@ router.post(
         }
       }
 
-      if (approvedRows.length > 0) {
-        await emitGroupJoinRequestsApproved(
+      if (wbaId && approvedRows.length > 0) {
+        await pushGroupWebhookUnlessClient(
+          req,
           req.redisStreamManager,
-          phone_number_id,
-          group_id,
-          approvedRows,
-          wbaId
+          buildGroupJoinRequestsApprovedSuccess(
+            wbaId,
+            phone_number_id,
+            group_id,
+            approvedRows
+          )
         );
       }
 
@@ -1476,34 +1469,36 @@ router.post("/:group_id", resolveWbaIdMiddleware, async (req, res, next) => {
     }
 
     const { subject, description, join_approval_mode } = req.body;
-    const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
-    const requestId = generateGraphRequestId();
-    const parts = {};
+    const settingsParts = {};
 
     if (subject !== undefined) {
       group.subject = subject;
-      parts.group_subject = { text: subject, update_successful: true };
+      settingsParts.subject = subject;
     }
 
     if (description !== undefined) {
       group.description = description;
-      parts.group_description = { text: description, update_successful: true };
+      settingsParts.description = description;
     }
 
     if (join_approval_mode !== undefined) {
       group.join_approval_mode = join_approval_mode;
+      settingsParts.join_approval_mode = join_approval_mode;
     }
 
     const updatedGroup = await updateGroupInRedis(req.redisManager, phone_number_id, group);
 
-    if (Object.keys(parts).length > 0) {
-      await emitGroupSettingsUpdateCombined(
+    const wbaId = getResolvedWbaId(req);
+    if (wbaId && Object.keys(settingsParts).length > 0) {
+      await pushGroupWebhookUnlessClient(
+        req,
         req.redisStreamManager,
-        phone_number_id,
-        group_id,
-        wbaId,
-        requestId,
-        parts
+        buildGroupSettingsUpdateSuccess(
+          wbaId,
+          phone_number_id,
+          updatedGroup,
+          settingsParts
+        )
       );
     }
 
@@ -1550,17 +1545,14 @@ router.delete("/:group_id", resolveWbaIdMiddleware, async (req, res, next) => {
 
     await deleteGroupFromRedis(req.redisManager, phone_number_id, group_id);
 
-    const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
-    const requestId = generateGraphRequestId();
-    await emitGroupLifecycleWebhook(
-      req.redisStreamManager,
-      phone_number_id,
-      group_id,
-      "group_delete",
-      group,
-      wbaId,
-      { requestId }
-    );
+    const wbaId = getResolvedWbaId(req);
+    if (wbaId) {
+      await pushGroupWebhookUnlessClient(
+        req,
+        req.redisStreamManager,
+        buildGroupDeleteSuccess(wbaId, phone_number_id, group)
+      );
+    }
 
     const io = require("../../../../utils/ws/SocketManager").getIO();
     if (io) {
@@ -1574,6 +1566,8 @@ router.delete("/:group_id", resolveWbaIdMiddleware, async (req, res, next) => {
     return res.status(HTTP_STATUS.OK).json({
       messaging_product: "whatsapp",
       success: true,
+      group_id,
+      request_id: group.request_id || null,
     });
   } catch (e) {
     return next(e);
@@ -1695,7 +1689,7 @@ router.get("/:group_id/join_requests", async (req, res, next) => {
  * POST /:group_id/join_requests
  * Alias for Approve join requests
  */
-router.post("/:group_id/join_requests", async (req, res, next) => {
+router.post("/:group_id/join_requests", resolveWbaIdMiddleware, async (req, res, next) => {
   const { group_id } = req.params;
   if (!group_id.endsWith("@g.us")) return next();
   const phone_number_id =
@@ -1728,7 +1722,7 @@ router.post("/:group_id/join_requests", async (req, res, next) => {
     const approved_join_requests = [];
     const failed_join_requests = [];
     const approvedRows = [];
-    const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
+    const wbaId = getResolvedWbaId(req);
 
     for (const clientId of join_requests) {
       const joinRequestsList = await getJoinRequests(req.redisManager, phone_number_id, group_id);
@@ -1764,13 +1758,16 @@ router.post("/:group_id/join_requests", async (req, res, next) => {
       }
     }
 
-    if (approvedRows.length > 0) {
-      await emitGroupJoinRequestsApproved(
+    if (wbaId && approvedRows.length > 0) {
+      await pushGroupWebhookUnlessClient(
+        req,
         req.redisStreamManager,
-        phone_number_id,
-        group_id,
-        approvedRows,
-        wbaId
+        buildGroupJoinRequestsApprovedSuccess(
+          wbaId,
+          phone_number_id,
+          group_id,
+          approvedRows
+        )
       );
     }
 
@@ -1861,7 +1858,7 @@ router.delete("/:group_id/join_requests", async (req, res, next) => {
  * DELETE /:group_id/participants
  * Alias for Remove group participants
  */
-router.delete("/:group_id/participants", async (req, res, next) => {
+router.delete("/:group_id/participants", resolveWbaIdMiddleware, async (req, res, next) => {
   const { group_id } = req.params;
   if (!group_id.endsWith("@g.us")) return next();
   const phone_number_id =
@@ -1890,8 +1887,8 @@ router.delete("/:group_id/participants", async (req, res, next) => {
 
     const removed_participants = [];
     const failed_participants = [];
-    const requestId = generateGraphRequestId();
-    const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
+    const requestId = group.request_id || generateGraphRequestId();
+    const wbaId = getResolvedWbaId(req);
 
     for (const wa_id of waIds) {
       const updatedGroup = await removeParticipantFromGroup(req.redisManager, phone_number_id, group, wa_id);
@@ -1934,19 +1931,16 @@ router.delete("/:group_id/participants", async (req, res, next) => {
       );
     }
 
-    await emitGroupParticipantsRemove(
-      req.redisStreamManager,
-      phone_number_id,
-      group_id,
-      wbaId,
-      {
-        requestId,
-        initiated_by: "business",
-        removed_participants,
-        failed_participants,
-        errors: groupErrors,
-      }
-    );
+    if (wbaId && removed_participants.length > 0) {
+      await pushGroupWebhookUnlessClient(
+        req,
+        req.redisStreamManager,
+        buildGroupParticipantsRemoveSuccess(wbaId, phone_number_id, group, {
+          removed_participants,
+          request_id: requestId,
+        })
+      );
+    }
 
     return res.status(HTTP_STATUS.OK).json({
       messaging_product: "whatsapp",
@@ -1963,7 +1957,7 @@ router.delete("/:group_id/participants", async (req, res, next) => {
  * POST /groups/join
  * Join a group via invite link
  */
-router.post("/groups/join", async (req, res) => {
+router.post("/groups/join", resolveWbaIdMiddleware, async (req, res) => {
   try {
     const validation = validateJoinGroupByInviteLinkRequest(req);
     if (!validation.isValid) {
@@ -1977,15 +1971,23 @@ router.post("/groups/join", async (req, res) => {
       return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, result.error);
     }
 
+    req.params.phone_number_id = result.phone_number_id;
+    await resolveWbaIdForRequest(req.redisManager, req);
+    const wbaId = getResolvedWbaId(req);
+
     if (result.status === "joined") {
-      const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
-      await emitGroupParticipantsAddInviteLink(
-        req.redisStreamManager,
-        result.phone_number_id,
-        result.group_id,
-        [{ input: wa_id, wa_id }],
-        wbaId
-      );
+      if (wbaId) {
+        await pushGroupWebhookUnlessClient(
+          req,
+          req.redisStreamManager,
+          buildGroupParticipantsAddInviteLinkSuccess(
+            wbaId,
+            result.phone_number_id,
+            result.group_id,
+            [wa_id]
+          )
+        );
+      }
 
       const io = require("../../../../utils/ws/SocketManager").getIO();
       if (io) {
@@ -2001,16 +2003,23 @@ router.post("/groups/join", async (req, res) => {
         });
       }
     } else if (result.status === "request_pending") {
-      const wbaId = req.user?.wba_id || req.user?.whatsapp_business_account_id || "default_wba";
-      await emitGroupJoinRequestLifecycle(
-        req.redisStreamManager,
-        result.phone_number_id,
-        result.group_id,
-        "group_join_request_created",
-        wa_id,
-        wbaId,
-        result.join_request_id
-      );
+      if (wbaId) {
+        await pushGroupWebhookUnlessClient(
+          req,
+          req.redisStreamManager,
+          buildGroupJoinRequestLifecycle(
+            wbaId,
+            result.phone_number_id,
+            result.group_id,
+            "group_join_request_created",
+            {
+              wa_id,
+              join_request_id: result.join_request_id,
+              reason: "invite_link",
+            }
+          )
+        );
+      }
 
       const io = require("../../../../utils/ws/SocketManager").getIO();
       if (io) {
@@ -2032,6 +2041,7 @@ router.post("/groups/join", async (req, res) => {
       success: true,
       status: result.status,
       group_id: result.group_id,
+      phone_number_id: result.phone_number_id,
       ...(result.join_request_id ? { join_request_id: result.join_request_id } : {}),
     });
   } catch (error) {

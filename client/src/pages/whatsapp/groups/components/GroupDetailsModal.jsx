@@ -12,10 +12,23 @@ import {
   MdOutlineMessage,
 } from "react-icons/md";
 import axios from "axios";
+import { WebhookService } from "@api/WebhookService";
+import {
+  buildGroupDeleteSuccess,
+  buildGroupParticipantsRemoveSuccess,
+  buildGroupSettingsUpdateSuccess,
+} from "../utils/wbGroupFailedWebhooks";
+import { resolveWbaIdForPhone } from "../utils/resolveWbaId";
+import { groupsWebhookAuthHeaders } from "../utils/groupsApiHeaders";
+import {
+  approveJoinRequestsViaClient,
+  rejectJoinRequestsViaClient,
+} from "../utils/groupWebhookClientActions";
 
 function GroupDetailsModal({
   group,
   phone_number_id,
+  wba_id,
   onClose,
   onGroupUpdated,
   onGroupDeleted,
@@ -65,6 +78,9 @@ function GroupDetailsModal({
     }
   };
 
+  const effectiveWbaId = async () =>
+    wba_id || (await resolveWbaIdForPhone(phone_number_id));
+
   const handleUpdateGroup = async (e) => {
     if (e) e.preventDefault();
     setError(null);
@@ -77,13 +93,36 @@ function GroupDetailsModal({
           messaging_product: "whatsapp",
           ...editData,
         },
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-          },
-        },
+        { headers: groupsWebhookAuthHeaders() },
       );
-      onGroupUpdated(response.data);
+      const updated = response.data;
+      const resolvedWbaId = await effectiveWbaId();
+      const settingsPayload = {
+        subject:
+          editData.subject !== group.subject ? editData.subject : undefined,
+        description:
+          editData.description !== group.description
+            ? editData.description
+            : undefined,
+        join_approval_mode:
+          editData.join_approval_mode !== group.join_approval_mode
+            ? editData.join_approval_mode
+            : undefined,
+      };
+      const hasSettingsChange = Object.values(settingsPayload).some(
+        (v) => v !== undefined
+      );
+      if (resolvedWbaId && hasSettingsChange) {
+        await WebhookService.push(
+          buildGroupSettingsUpdateSuccess(
+            resolvedWbaId,
+            phone_number_id,
+            { ...group, request_id: updated.request_id || group.request_id },
+            settingsPayload
+          )
+        );
+      }
+      onGroupUpdated(updated);
       setError(null);
     } catch (err) {
       console.error("Error updating group:", err);
@@ -125,15 +164,25 @@ function GroupDetailsModal({
 
     try {
       setLoading(true);
-      await axios.delete(`/v14.0/${group.id}/participants`, {
+      const response = await axios.delete(`/v14.0/${group.id}/participants`, {
         data: {
           messaging_product: "whatsapp",
           participants: [waId],
         },
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-        },
+        headers: groupsWebhookAuthHeaders(),
       });
+      const resolvedWbaId = await effectiveWbaId();
+      const removed = response.data?.removed_participants || [{ input: waId }];
+      if (resolvedWbaId && removed.length > 0) {
+        await WebhookService.push(
+          buildGroupParticipantsRemoveSuccess(
+            resolvedWbaId,
+            phone_number_id,
+            group,
+            removed
+          )
+        );
+      }
       refreshGroup();
     } catch (err) {
       console.error("Error removing participant:", err);
@@ -146,18 +195,13 @@ function GroupDetailsModal({
   const handleApproveJoinRequest = async (joinRequestId) => {
     try {
       setLoading(true);
-      await axios.post(
-        `/v14.0/${group.id}/join_requests`,
-        {
-          messaging_product: "whatsapp",
-          join_requests: [joinRequestId],
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-          },
-        },
-      );
+      await approveJoinRequestsViaClient({
+        group_id: group.id,
+        phone_number_id,
+        wba_id: await effectiveWbaId(),
+        join_requests: [joinRequestId],
+        joinRequestsList: joinRequests,
+      });
       fetchJoinRequests();
       refreshGroup();
     } catch (err) {
@@ -171,14 +215,9 @@ function GroupDetailsModal({
   const handleRejectJoinRequest = async (joinRequestId) => {
     try {
       setLoading(true);
-      await axios.delete(`/v14.0/${group.id}/join_requests`, {
-        data: {
-          messaging_product: "whatsapp",
-          join_requests: [joinRequestId],
-        },
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-        },
+      await rejectJoinRequestsViaClient({
+        group_id: group.id,
+        join_requests: [joinRequestId],
       });
       fetchJoinRequests();
     } catch (err) {
@@ -229,10 +268,14 @@ function GroupDetailsModal({
     try {
       setLoading(true);
       await axios.delete(`/v14.0/${group.id}`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-        },
+        headers: groupsWebhookAuthHeaders(),
       });
+      const resolvedWbaId = await effectiveWbaId();
+      if (resolvedWbaId) {
+        await WebhookService.push(
+          buildGroupDeleteSuccess(resolvedWbaId, phone_number_id, group)
+        );
+      }
       onGroupDeleted(group.id);
       onClose();
     } catch (err) {

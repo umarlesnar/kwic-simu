@@ -8,20 +8,11 @@ import GroupDetailsModal from "./components/GroupDetailsModal";
 import PendingCreationsSection from "./components/PendingCreationsSection";
 import axios from "axios";
 import { io } from "socket.io-client";
+import { resolveWbaIdForPhone } from "./utils/resolveWbaId";
 
-function readWbaIdFromToken() {
-  try {
-    const t = localStorage.getItem("token");
-    if (!t) return "1100000000001";
-    const payload = JSON.parse(atob(t.split(".")[1]));
-    return payload.wba_id || "1100000000001";
-  } catch {
-    return "1100000000001";
-  }
-}
 function WAGroupsPage() {
   const { phone_number_id } = useParams();
-  const wba_id = readWbaIdFromToken();
+  const [wba_id, setWbaId] = useState(null);
   const navigate = useNavigate();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -149,6 +140,13 @@ function WAGroupsPage() {
     }
   };
 
+  useEffect(() => {
+    if (!phone_number_id) return;
+    resolveWbaIdForPhone(phone_number_id)
+      .then(setWbaId)
+      .catch((err) => console.error("Failed to resolve WBA id:", err));
+  }, [phone_number_id]);
+
   // Initial load
   useEffect(() => {
     if (phone_number_id) {
@@ -160,6 +158,7 @@ function WAGroupsPage() {
   const handleGroupCreated = (payload) => {
     if (payload?.request_id) {
       console.info("Group create request_id:", payload.request_id);
+      setGroups(prev => [{ ...payload, request_id: payload.request_id }, ...prev]);
     }
     setShowCreateForm(false);
     setPendingRefreshTrigger(prev => prev + 1);
@@ -227,9 +226,9 @@ function WAGroupsPage() {
           </div>
         )}
         
-        <PendingCreationsSection 
+        <PendingCreationsSection
           wba_id={wba_id}
-          phone_number_id={phone_number_id} 
+          phone_number_id={phone_number_id}
           refreshTrigger={pendingRefreshTrigger}
           onCreationProcessed={() => fetchGroups({ limit: pagination.limit || 10 })}
         />
@@ -270,6 +269,7 @@ function WAGroupsPage() {
         <GroupDetailsModal
           group={selectedGroup}
           phone_number_id={phone_number_id}
+          wba_id={wba_id}
           onClose={() => {
             setShowDetailsModal(false);
             setSelectedGroup(null);
