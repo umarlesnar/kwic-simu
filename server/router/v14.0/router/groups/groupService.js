@@ -6,7 +6,6 @@
 const {
   MAX_PARTICIPANTS,
   REDIS_KEY_PATTERNS,
-  INVITE_LINK_TTL,
   GROUP_CREATE_DELAY_AUTO_MS,
   GROUP_CREATE_DELAY_APPROVAL_MS,
   JOIN_APPROVAL_MODES,
@@ -17,7 +16,6 @@ const {
   createJoinRequest,
   createInviteLink,
   generateInviteLinkUrl,
-  calculateInviteLinkExpiration,
   generateGraphRequestId,
   generateJoinRequestId,
 } = require("./models");
@@ -128,9 +126,7 @@ async function createGroupInRedis(redisManagerWrapper, phoneNumberId, groupData)
 
     // Generate invite link
     const inviteInfo = generateInviteLinkUrl(phoneNumberId, group.id);
-    const expirationTimestamp = calculateInviteLinkExpiration();
     group.invite_link = inviteInfo.link;
-    group.invite_link_expiration = expirationTimestamp;
 
     // Store group in Redis
     const groupKey = REDIS_KEY_PATTERNS.GROUP(phoneNumberId, group.id);
@@ -144,23 +140,21 @@ async function createGroupInRedis(redisManagerWrapper, phoneNumberId, groupData)
     const globalMapKey = REDIS_KEY_PATTERNS.GLOBAL_GROUP_MAP(group.id);
     await redisManager.set(globalMapKey, phoneNumberId);
 
-    // Store invite link with TTL
+    // Store invite link (no expiration)
     const inviteLinkKey = REDIS_KEY_PATTERNS.GROUP_INVITE_LINK(
       phoneNumberId,
       group.id
     );
-    const inviteLink = createInviteLink(group.id, inviteInfo.link, expirationTimestamp);
-    await redisManager.setex(
+    const inviteLink = createInviteLink(group.id, inviteInfo.link);
+    await redisManager.set(
       inviteLinkKey,
-      INVITE_LINK_TTL,
       JSON.stringify(inviteLink)
     );
 
-    // Store token to group mapping
+    // Store token to group mapping (no expiration)
     const tokenKey = REDIS_KEY_PATTERNS.GLOBAL_INVITE_LINK_MAP(inviteInfo.token);
-    await redisManager.setex(
+    await redisManager.set(
       tokenKey,
-      INVITE_LINK_TTL,
       JSON.stringify({ group_id: group.id, phone_number_id: phoneNumberId })
     );
 
@@ -235,6 +229,24 @@ async function deleteGroupFromRedis(redisManagerWrapper, phoneNumberId, groupId)
       groupId
     );
     const indexKey = REDIS_KEY_PATTERNS.GROUP_INDEX(phoneNumberId);
+
+    // Clean up global invite link map if exists
+    const inviteLinkData = await redisManager.get(inviteLinkKey);
+    if (inviteLinkData) {
+      try {
+        const inviteLink = JSON.parse(inviteLinkData);
+        if (inviteLink && inviteLink.link) {
+          const urlParts = inviteLink.link.split("/");
+          const token = urlParts[urlParts.length - 1];
+          if (token) {
+            const tokenKey = REDIS_KEY_PATTERNS.GLOBAL_INVITE_LINK_MAP(token);
+            await redisManager.del(tokenKey);
+          }
+        }
+      } catch (e) {
+        console.error("Error cleaning up global invite link map:", e);
+      }
+    }
 
     // Delete group data
     await redisManager.del(groupKey);
@@ -603,27 +615,42 @@ async function getInviteLink(redisManagerWrapper, phoneNumberId, groupId) {
 async function resetInviteLink(redisManagerWrapper, phoneNumberId, groupId) {
   try {
     const redisManager = await redisManagerWrapper.getClient();
-    const inviteInfo = generateInviteLinkUrl(phoneNumberId, groupId);
-    const expirationTimestamp = calculateInviteLinkExpiration();
-    const inviteLink = createInviteLink(groupId, inviteInfo.link, expirationTimestamp);
-
     const inviteLinkKey = REDIS_KEY_PATTERNS.GROUP_INVITE_LINK(
       phoneNumberId,
       groupId
     );
 
-    // Store new invite link with TTL
-    await redisManager.setex(
+    // Clean up old token if exists
+    const oldInviteLinkData = await redisManager.get(inviteLinkKey);
+    if (oldInviteLinkData) {
+      try {
+        const oldInviteLink = JSON.parse(oldInviteLinkData);
+        if (oldInviteLink && oldInviteLink.link) {
+          const urlParts = oldInviteLink.link.split("/");
+          const oldToken = urlParts[urlParts.length - 1];
+          if (oldToken) {
+            const oldTokenKey = REDIS_KEY_PATTERNS.GLOBAL_INVITE_LINK_MAP(oldToken);
+            await redisManager.del(oldTokenKey);
+          }
+        }
+      } catch (e) {
+        console.error("Error cleaning up old invite link token:", e);
+      }
+    }
+
+    const inviteInfo = generateInviteLinkUrl(phoneNumberId, groupId);
+    const inviteLink = createInviteLink(groupId, inviteInfo.link);
+
+    // Store new invite link (no expiration)
+    await redisManager.set(
       inviteLinkKey,
-      INVITE_LINK_TTL,
       JSON.stringify(inviteLink)
     );
 
-    // Store token to group mapping
+    // Store token to group mapping (no expiration)
     const tokenKey = REDIS_KEY_PATTERNS.GLOBAL_INVITE_LINK_MAP(inviteInfo.token);
-    await redisManager.setex(
+    await redisManager.set(
       tokenKey,
-      INVITE_LINK_TTL,
       JSON.stringify({ group_id: groupId, phone_number_id: phoneNumberId })
     );
 

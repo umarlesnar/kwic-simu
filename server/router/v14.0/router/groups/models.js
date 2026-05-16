@@ -32,7 +32,6 @@ function createGroup(data) {
     participants: data.participants || [],
     participant_count: (data.participants || []).length,
     invite_link: data.invite_link || "",
-    invite_link_expiration: data.invite_link_expiration || 0,
     join_requests: data.join_requests || [],
     request_id: data.request_id || null,
     created_at: data.created_at || now,
@@ -69,19 +68,11 @@ function createJoinRequest(waId) {
   };
 }
 
-/**
- * Creates a new Invite Link entity
- * @param {string} groupId - Group ID
- * @param {string} link - Invite link URL
- * @param {number} expirationTimestamp - Unix timestamp for expiration
- * @returns {object} Invite link entity
- */
-function createInviteLink(groupId, link, expirationTimestamp) {
+function createInviteLink(groupId, link) {
   return {
     link,
     group_id: groupId,
     created_at: new Date().toISOString(),
-    expiration_timestamp: expirationTimestamp,
     is_active: true,
   };
 }
@@ -121,15 +112,6 @@ function generateInviteLinkToken() {
   return Math.random().toString(36).substr(2, 16);
 }
 
-/**
- * Calculates invite link expiration timestamp (24 hours from now)
- * @returns {number} Unix timestamp in seconds
- */
-function calculateInviteLinkExpiration() {
-  const now = Math.floor(Date.now() / 1000);
-  const ttl = 86400; // 24 hours in seconds
-  return now + ttl;
-}
 
 /**
  * Formats a group for API response
@@ -206,7 +188,6 @@ module.exports = {
   generateGroupIdBase,
   generateInviteLinkUrl,
   generateInviteLinkToken,
-  calculateInviteLinkExpiration,
   formatGroupResponse,
   formatGroupListResponse,
   formatJoinRequestResponse,

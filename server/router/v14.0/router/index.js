@@ -910,7 +910,7 @@ router.post("/:dynamic_value/messages", async (req, res) => {
       const cvalue = {
         id: conversation_id, // Generate random string
         origin: {
-          type: "marketing",
+          type: isGroupMessage ? "group_marketing" : "marketing",
         },
         expiration_timestamp: expires_at_24h,
       };
@@ -926,7 +926,7 @@ router.post("/:dynamic_value/messages", async (req, res) => {
     const pricing = {
       billable: true,
       pricing_model: "PMP",
-      category: "marketing",
+      category: isGroupMessage ? "group_marketing" : "marketing",
       type: "regular",
     };
 

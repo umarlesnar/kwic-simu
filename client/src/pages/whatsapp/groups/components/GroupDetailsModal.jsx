@@ -298,6 +298,14 @@ function GroupDetailsModal({
 
   const formatDate = (dateValue) => {
     if (!dateValue) return "N/A";
+
+    // If it's already a Date object, use it directly
+    if (dateValue instanceof Date) {
+      return isNaN(dateValue.getTime())
+        ? "Invalid Date"
+        : dateValue.toLocaleString();
+    }
+
     // Check if it's a Unix timestamp (seconds)
     const timestamp = parseInt(dateValue);
     if (
@@ -307,7 +315,9 @@ function GroupDetailsModal({
     ) {
       return new Date(timestamp * 1000).toLocaleString();
     }
-    return new Date(dateValue).toLocaleString();
+
+    const d = new Date(dateValue);
+    return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleString();
   };
 
   const tabs = [
@@ -429,12 +439,6 @@ function GroupDetailsModal({
                       {inviteLink.invite_link}
                     </p>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-blue-600 dark:text-blue-400">
-                        Expires:{" "}
-                        {formatDate(
-                          new Date(inviteLink.expiration_timestamp * 1000),
-                        )}
-                      </span>
                       <button
                         onClick={handleResetInviteLink}
                         disabled={loading}
