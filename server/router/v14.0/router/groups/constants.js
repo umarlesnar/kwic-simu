@@ -7,9 +7,6 @@
 const MAX_PARTICIPANTS = 8;
 const MAX_GROUPS_PER_PHONE = 10000;
 
-// Invite link configuration
-const INVITE_LINK_TTL = 86400; // 24 hours in seconds
-
 // Group ID suffix
 const GROUP_ID_SUFFIX = "@g.us";
 
@@ -133,7 +130,6 @@ const HTTP_STATUS = {
 module.exports = {
   MAX_PARTICIPANTS,
   MAX_GROUPS_PER_PHONE,
-  INVITE_LINK_TTL,
   GROUP_ID_SUFFIX,
   JOIN_APPROVAL_MODES,
   GROUP_CREATE_DELAY_AUTO_MS,
