@@ -970,6 +970,16 @@ router.post("/:dynamic_value/messages", async (req, res) => {
     if (body.type === "pin" && body.pin) {
       const pinOp = body.pin.type === "unpin" ? "unpin" : "pin";
       const targetMessageId = body.pin.message_id;
+
+      // Update response data for pin/unpin operations
+      data.contacts = [
+        {
+          input: body.to,
+          wa_id: body.to,
+        },
+      ];
+      data.messages[0].id = targetMessageId;
+
       message_value.pin_update = {
         target_message_id: targetMessageId,
         action: pinOp,
@@ -3016,5 +3026,96 @@ router.delete("/:dynamic_value/message_qrdls/:qr_code_id", async (req, res) => {
   res.json({ success: true });
 });
 
+// GET /message_template_library or /:dynamic_value/message_template_library
+const getMessageTemplateLibrary = (req, res) => {
+  const { category, topic, language } = req.query;
+
+  // Exact mock data as requested by the user
+  const mockTemplates = [
+    {
+      name: "group_invite_link",
+      language: "en",
+      category: "UTILITY",
+      topic: "GROUP_INVITE_LINK",
+      usecase: "GROUP_INVITE_UPON_REQUEST",
+      industry: ["E_COMMERCE"],
+      body: "Hi {{1}}, your request for {{2}} service from {{3}} was successfully received!\n\nYou can start the service by clicking and joining the group below.\n{{4}}\n\nThank you!",
+      body_params: [
+        "John",
+        "live demo service",
+        "ABC consultation",
+        "Y2FwaV9ncm91cDoxOTUwNTU1MDA3OToxMjAzNjMyNDQwODgyNzY1NDYZD"
+      ],
+      body_param_types: ["TEXT", "TEXT", "TEXT", "GROUP_ID"],
+      id: "24815161548079300"
+    },
+    {
+      name: "group_invite_link_concise",
+      language: "en",
+      category: "UTILITY",
+      topic: "GROUP_INVITE_LINK",
+      usecase: "GROUP_INVITE_UPON_REQUEST",
+      industry: ["E_COMMERCE"],
+      body: "Your {{1}} request with {{2}} is confirmed. Please join the WhatsApp group to start:\n{{3}} Thank you!",
+      body_params: [
+        "live demo service",
+        "ABC consultation",
+        "Y2FwaV9ncm91cDoxOTUwNTU1MDA3OToxMjAzNjMyNDQwODgyNzY1NDYZD"
+      ],
+      body_param_types: ["TEXT", "TEXT", "GROUP_ID"],
+      id: "32074222165509377"
+    },
+    {
+      name: "group_invite_link_detailed",
+      language: "en",
+      category: "UTILITY",
+      topic: "GROUP_INVITE_LINK",
+      usecase: "GROUP_INVITE_UPON_REQUEST",
+      industry: ["E_COMMERCE"],
+      body: "Hi {{1}},\nWe are pleased to inform you that your request for {{2}} from {{3}} has been successfully received.\n\nTo facilitate your session, we have created a dedicated WhatsApp group. Please join the group using the link below to proceed with your request:\n{{4}}\n\nThank you for using our service!",
+      body_params: [
+        "John",
+        "live demo service",
+        "ABC consultation",
+        "Y2FwaV9ncm91cDoxOTUwNTU1MDA3OToxMjAzNjMyNDQwODgyNzY1NDYZD"
+      ],
+      body_param_types: ["TEXT", "TEXT", "TEXT", "GROUP_ID"],
+      id: "30603657932611250"
+    }
+  ];
+
+  // Optional filtering based on query params
+  let filtered = mockTemplates;
+
+  if (category) {
+    const catUpper = category.toUpperCase();
+    filtered = filtered.filter(t => t.category === catUpper);
+  }
+
+  if (topic) {
+    const topicUpper = topic.toUpperCase();
+    filtered = filtered.filter(t => t.topic === topicUpper);
+  }
+
+  if (language) {
+    const langLower = language.toLowerCase();
+    filtered = filtered.filter(t => t.language.toLowerCase() === langLower);
+  }
+
+  return res.json({
+    data: filtered,
+    paging: {
+      cursors: {
+        before: "MAZDZD",
+        after: "MgZDZD"
+      }
+    }
+  });
+};
+
+router.get("/message_template_library", getMessageTemplateLibrary);
+router.get("/:dynamic_value/message_template_library", (req, res) => {
+  return getMessageTemplateLibrary(req, res);
+});
 
 module.exports = router;

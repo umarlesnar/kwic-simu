@@ -501,6 +501,7 @@ const ChatMessage = ({
 }) => {
   const [showMore, setShowMore] = useState(false);
   const [showStatusPopup, setShowStatusPopup] = useState(false);
+  const isSending = useRef(false);
 
   useEffect(() => {
     if (
@@ -515,8 +516,10 @@ const ChatMessage = ({
         message.type === "document" ||
         message.type === "interactive") &&
       message.status === "pending" &&
-      message.apiPayload
+      message.apiPayload &&
+      !isSending.current
     ) {
+      isSending.current = true;
       const send = async () => {
         try {
           await WebhookService.push(message.apiPayload);
@@ -529,6 +532,7 @@ const ChatMessage = ({
           }, 2000);
         } catch (error) {
           console.error("Error sending message:", error);
+          isSending.current = false;
           updateMessageStatus(message.id, "error");
         }
       };
@@ -1391,8 +1395,14 @@ const ChatBot = ({
     };
     message.wa_id = wa_id;
 
+    const apiPayload = message.getInteractiveReplyMessage(
+      interactivePayload,
+      userProfile
+    );
+    const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
+
     const newMessage = {
-      id: Date.now(),
+      id: msgId,
       type: "text",
       content:
         interactivePayload.interactive.button_reply?.title ||
@@ -1400,10 +1410,7 @@ const ChatBot = ({
         "Interactive response",
       isUser: true,
       status: "pending",
-      apiPayload: message.getInteractiveReplyMessage(
-        interactivePayload,
-        userProfile
-      ),
+      apiPayload: apiPayload,
     };
 
     setMessages((prev) => [...prev, newMessage]);
@@ -1547,14 +1554,17 @@ const ChatBot = ({
       };
       message.wa_id = wa_id;
 
+      const apiPayload = message.getTextMessage(inputValue, userProfile);
+      const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
+
       const newMessage = {
-        id: Date.now(),
+        id: msgId,
         type: "text",
         content: inputValue,
         isUser: true,
         status: "pending",
         replyMessage: replyMessage,
-        apiPayload: message.getTextMessage(inputValue, userProfile),
+        apiPayload: apiPayload,
       };
 
       setMessages((prev) => [...prev, newMessage]);
@@ -1650,12 +1660,14 @@ const ChatBot = ({
               mediaPayload,
               userProfile
             );
+            const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
 
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === newMessage.id
                   ? {
                       ...msg,
+                      id: msgId,
                       content: mediaData.url,
                       status: "pending",
                       uploadProgress: 100,
@@ -1852,14 +1864,17 @@ const ChatBot = ({
       .map((p) => `${p.name} (₹${p.price})`)
       .join(", ");
 
+    const apiPayload = message.getOrderMessage(selectedProducts, userProfile);
+    const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
+
     const newMessage = {
-      id: Date.now(),
+      id: msgId,
       type: "cart",
       content: `Cart: ${selectedProducts.length} items`,
       isUser: true,
       status: "pending",
       replyMessage: replyMessage,
-      apiPayload: message.getOrderMessage(selectedProducts, userProfile),
+      apiPayload: apiPayload,
       selectedProducts: selectedProducts,
     };
 
@@ -1900,8 +1915,11 @@ const ChatBot = ({
     message.phone_number_id = session.phone_number.value.id;
     message.wa_id = wa_id;
 
+    const apiPayload = message.getContactMessage(contactData, userProfile);
+    const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
+
     const newMessage = {
-      id: Date.now(),
+      id: msgId,
       type: "contacts",
       content: {
         name: contactData.formattedName,
@@ -1909,7 +1927,7 @@ const ChatBot = ({
       },
       isUser: true,
       status: "pending",
-      apiPayload: message.getContactMessage(contactData, userProfile),
+      apiPayload: apiPayload,
     };
 
     setMessages((prev) => [...prev, newMessage]);
@@ -1954,8 +1972,11 @@ const ChatBot = ({
     message.phone_number_id = session.phone_number.value.id;
     message.wa_id = wa_id;
 
+    const apiPayload = message.getLocationMessage(locationData, userProfile);
+    const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
+
     const newMessage = {
-      id: Date.now(),
+      id: msgId,
       type: "location",
       content: {
         latitude: parseFloat(locationData.latitude),
@@ -1965,7 +1986,7 @@ const ChatBot = ({
       },
       isUser: true,
       status: "pending",
-      apiPayload: message.getLocationMessage(locationData, userProfile),
+      apiPayload: apiPayload,
     };
 
     setMessages((prev) => [...prev, newMessage]);
@@ -1992,13 +2013,16 @@ const ChatBot = ({
     message.phone_number_id = session.phone_number.value.id;
     message.wa_id = wa_id;
 
+    const apiPayload = message.getFlowMessage(flowData, userProfile);
+    const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
+
     const newMessage = {
-      id: Date.now(),
+      id: msgId,
       type: "interactive",
       content: "Flow response sent",
       isUser: true,
       status: "pending",
-      apiPayload: message.getFlowMessage(flowData, userProfile),
+      apiPayload: apiPayload,
     };
 
     setMessages((prev) => [...prev, newMessage]);
@@ -2027,13 +2051,16 @@ const ChatBot = ({
     message.phone_number_id = session.phone_number.value.id;
     message.wa_id = wa_id;
 
+    const apiPayload = message.getAdReferralMessage(adData, userProfile);
+    const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
+
     const newMessage = {
-      id: Date.now(),
+      id: msgId,
       type: "text",
       content: adData.messageText,
       isUser: true,
       status: "pending",
-      apiPayload: message.getAdReferralMessage(adData, userProfile),
+      apiPayload: apiPayload,
       referralData: adData,
     };
 
