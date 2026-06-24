@@ -679,9 +679,9 @@ const ChatMessage = ({
               e.target.nextSibling.style.display = "block";
             }}
           />
-          <div className="text-gray-500 text-sm flex items-center justify-center w-full h-32 bg-gray-100 rounded-lg">
+          {/* <div className="text-gray-500 text-sm flex items-center justify-center w-full h-32 bg-gray-100 rounded-lg">
             Image not available
-          </div>
+          </div> */}
           {message.caption && (
             <p className="text-sm text-gray-600">{message.caption}</p>
           )}

@@ -10,7 +10,10 @@ export default defineConfig({
   server: {
     allowedHosts:["hari2483-3000.gangboyz.in"],
     proxy: {
-      "/api": "https://wb.nekhop.com/",
+      // "/api": "https://wb.nekhop.com/",
+      "/api": "http://localhost:3002/",
+      "/v14.0": "http://localhost:3002/",
+      // "/v14.0": "https://wb.nekhop.com/",
     },
   },
   plugins: [tailwindcss(), react()],

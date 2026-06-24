@@ -1,5 +1,5 @@
 module.exports = {
-  REDIS_URL: process.env.REDIS_URL || "redis://localhost:6379",
+  REDIS_URL: process.env.REDIS_URL || "redis://default:mskjplwsi9823qposdkm@103.25.47.251:6389",
   WEBHOOK_URL:
     process.env.WEBHOOK_URL || "https://prev-kwic-dev.nekhop.com/webhook",
   STREAM_NAME: "my_stream",
