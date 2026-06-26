@@ -18,7 +18,7 @@ class WBMessages {
     return new Date().toLocaleString();
   }
 
-  getTextMessage(textBody, profileName = "Riaz") {
+  getTextMessage(textBody, profileName = "Riaz", context = null) {
     return {
       object: "whatsapp_business_account",
       entry: [
@@ -49,6 +49,7 @@ class WBMessages {
                       body: textBody,
                     },
                     type: "text",
+                    ...(context ? { context } : {}),
                   },
                 ],
               },
@@ -136,7 +137,7 @@ class WBMessages {
     };
   }
 
-  getContactMessage(contactData, profileName = "Riaz") {
+  getContactMessage(contactData, profileName = "Riaz", context = null) {
     const contact = {
       name: {
         formatted_name: contactData.formattedName,
@@ -205,6 +206,7 @@ class WBMessages {
                     timestamp: (Date.now() / 1000).toFixed(0).toString(),
                     type: "contacts",
                     contacts: [contact],
+                    ...(context ? { context } : {}),
                   },
                 ],
               },
@@ -290,7 +292,7 @@ class WBMessages {
       ],
     };
   }
-  getLocationMessage(locationData, profileName = "Riaz") {
+  getLocationMessage(locationData, profileName = "Riaz", context = null) {
     return {
       object: "whatsapp_business_account",
       entry: [
@@ -326,6 +328,7 @@ class WBMessages {
                         locationData.address ||
                         "123 Market St, San Francisco, CA 94103",
                     },
+                    ...(context ? { context } : {}),
                   },
                 ],
               },
@@ -388,12 +391,13 @@ class WBMessages {
       ],
     };
   }
-  getMediaMessage(mediaType, mediaData, profileName = "Riaz") {
+  getMediaMessage(mediaType, mediaData, profileName = "Riaz", context = null) {
     const messagePayload = {
       from: this.wa_id,
       id: `wamid.${this.generateRandomString()}`,
       timestamp: (Date.now() / 1000).toFixed(0).toString(),
       type: mediaType,
+      ...(context ? { context } : {}),
     };
 
     messagePayload[mediaType] = {

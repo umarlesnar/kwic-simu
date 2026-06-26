@@ -50,6 +50,35 @@ const formatTime = (seconds) => {
   return `${mins}:${secs}`;
 };
 
+// Helper function to get clean display names for replied-to messages
+const getReplyDisplayContent = (msg) => {
+  if (!msg) return "";
+  switch (msg.type) {
+    case "audio":
+      return "Audio";
+    case "image":
+      return "Image";
+    case "video":
+      return "Video";
+    case "document":
+      return "Document";
+    case "location":
+      return "Location";
+    case "contacts":
+      return "Contact";
+    case "sticker":
+      return "Sticker";
+    case "template":
+      return "Template";
+    case "interactive":
+      return "Interactive";
+    case "text":
+      return typeof msg.content === "string" ? msg.content : "Message";
+    default:
+      return `${(msg.type)}`;
+  }
+};
+
 // Transform API message to component format
 const transformMessage = (apiMessage, phoneNumberId) => {
   // Handle both API-returned and socket-emitted message formats
@@ -242,10 +271,10 @@ const transformMessage = (apiMessage, phoneNumberId) => {
 
     case "image":
       content =
-        raw?.image?.id ||
         raw?.image?.link ||
-        apiMessage.message?.image?.id ||
+        raw?.image?.id ||
         apiMessage.message?.image?.link ||
+        apiMessage.message?.image?.id ||
         "";
       additionalData.caption =
         raw?.image?.caption || apiMessage.message?.image?.caption;
@@ -253,10 +282,10 @@ const transformMessage = (apiMessage, phoneNumberId) => {
 
     case "video":
       content =
-        raw?.video?.id ||
         raw?.video?.link ||
-        apiMessage.message?.video?.id ||
+        raw?.video?.id ||
         apiMessage.message?.video?.link ||
+        apiMessage.message?.video?.id ||
         "";
       additionalData.caption =
         raw?.video?.caption || apiMessage.message?.video?.caption;
@@ -264,19 +293,19 @@ const transformMessage = (apiMessage, phoneNumberId) => {
 
     case "audio":
       content =
-        raw?.audio?.id ||
         raw?.audio?.link ||
-        apiMessage.message?.audio?.id ||
+        raw?.audio?.id ||
         apiMessage.message?.audio?.link ||
+        apiMessage.message?.audio?.id ||
         "";
       break;
 
     case "document":
       content =
-        raw?.document?.id ||
         raw?.document?.link ||
-        apiMessage.message?.document?.id ||
+        raw?.document?.id ||
         apiMessage.message?.document?.link ||
+        apiMessage.message?.document?.id ||
         "";
       additionalData.fileName =
         raw?.document?.filename || apiMessage.message?.document?.filename;
@@ -306,10 +335,10 @@ const transformMessage = (apiMessage, phoneNumberId) => {
 
     case "sticker":
       content =
-        raw?.sticker?.id ||
         raw?.sticker?.link ||
-        apiMessage.message?.sticker?.id ||
+        raw?.sticker?.id ||
         apiMessage.message?.sticker?.link ||
+        apiMessage.message?.sticker?.id ||
         "";
       break;
 
@@ -351,6 +380,7 @@ const transformMessage = (apiMessage, phoneNumberId) => {
     to: normalizedTo,
     conversation: normalizedConversation,
     direction: apiMessage.direction,
+    context: apiMessage.context || apiMessage.message?.context || raw?.context || null,
     ...additionalData,
   };
 };
@@ -488,6 +518,7 @@ const exampleMessages = [
 // ChatMessage component renders each message with reply & more options.
 const ChatMessage = ({
   message,
+  messages = [],
   updateMessageStatus,
   primaryColor,
   darkMode,
@@ -631,14 +662,31 @@ const ChatMessage = ({
           : "bg-white text-gray-900"
       }`}
     >
-      {message.replyMessage && (
-        <div className="mb-2 border-l-4 pl-2 text-xs text-gray-300">
-          Replying to:{" "}
-          {message.replyMessage.type === "audio"
-            ? "Audio Message"
-            : message.replyMessage.content}
-        </div>
-      )}
+      {(() => {
+        const replyMsgId = message.context?.id || message.context?.message_id;
+        const replyMsg =
+          message.replyMessage ||
+          (replyMsgId ? messages.find((m) => m.id === replyMsgId) : null);
+        return replyMsg ? (
+          <div
+            className="mb-1 border-l-2 pl-2 py-0.5 text-xs text-gray-500 bg-white rounded-r cursor-pointer hover:bg-gray-100"
+            onClick={() => {
+              const element = document.getElementById(replyMsgId);
+              if (element) {
+                element.scrollIntoView({ behavior: "smooth", block: "center" });
+                element.classList.add("ring-2", "ring-green-500", "ring-opacity-20", "rounded-lg");
+                setTimeout(() => {
+                  element.classList.remove("ring-2", "ring-green-500", "ring-opacity-20", "rounded-lg");
+                }, 2000);
+              }
+            }}
+          >
+            <span className="truncate block p-2">
+              {getReplyDisplayContent(replyMsg)}
+            </span>
+          </div>
+        ) : null;
+      })()}
       {message.type === "text" && (
         <div>
           <p>{message.content}</p>
@@ -676,12 +724,15 @@ const ChatMessage = ({
             className="rounded-lg max-w-full"
             onError={(e) => {
               e.target.style.display = "none";
-              e.target.nextSibling.style.display = "block";
+              const placeholder = e.target.nextSibling;
+              if (placeholder) {
+                placeholder.style.display = "flex";
+              }
             }}
           />
-          {/* <div className="text-gray-500 text-sm flex items-center justify-center w-full h-32 bg-gray-100 rounded-lg">
+          <div className="text-gray-500 text-sm flex items-center justify-center w-full h-32 bg-gray-100 rounded-lg" style={{ display: "none" }}>
             Image not available
-          </div> */}
+          </div>
           {message.caption && (
             <p className="text-sm text-gray-600">{message.caption}</p>
           )}
@@ -737,10 +788,13 @@ const ChatMessage = ({
             className="rounded-lg max-w-32 max-h-32 object-contain"
             onError={(e) => {
               e.target.style.display = "none";
-              e.target.nextSibling.style.display = "block";
+              const placeholder = e.target.nextSibling;
+              if (placeholder) {
+                placeholder.style.display = "flex";
+              }
             }}
           />
-          <div className=" text-gray-500 text-sm flex items-center justify-center w-32 h-32 bg-gray-100 rounded-lg">
+          <div className=" text-gray-500 text-sm flex items-center justify-center w-32 h-32 bg-gray-100 rounded-lg" style={{ display: "none" }}>
             Sticker
           </div>
         </div>
@@ -1297,12 +1351,12 @@ const ChatMessage = ({
   );
 
   return message.isUser ? (
-    <div className="flex justify-end items-center space-x-2">
+    <div id={message.id} className="flex justify-end items-center space-x-2">
       {actionButtons}
       {bubbleContent}
     </div>
   ) : (
-    <div className="flex flex-col items-start space-y-2">
+    <div id={message.id} className="flex flex-col items-start space-y-2">
       <div className="flex items-center space-x-2">
         {bubbleContent}
         {actionButtons}
@@ -1554,7 +1608,16 @@ const ChatBot = ({
       };
       message.wa_id = wa_id;
 
-      const apiPayload = message.getTextMessage(inputValue, userProfile);
+      const context = replyMessage
+        ? {
+            id: replyMessage.id,
+            from: replyMessage.isUser
+              ? (replyMessage.from || wa_id)
+              : (session.phone_number.value.display_phone_number || "business"),
+          }
+        : null;
+
+      const apiPayload = message.getTextMessage(inputValue, userProfile, context);
       const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
 
       const newMessage = {
@@ -1564,6 +1627,7 @@ const ChatBot = ({
         isUser: true,
         status: "pending",
         replyMessage: replyMessage,
+        context: context,
         apiPayload: apiPayload,
       };
 
@@ -1655,10 +1719,20 @@ const ChatBot = ({
                 file.type.includes("ogg") || file.type.includes("opus");
             }
 
+            const context = replyMessage
+              ? {
+                  id: replyMessage.id,
+                  from: replyMessage.isUser
+                    ? (replyMessage.from || wa_id)
+                    : (session.phone_number.value.display_phone_number || "business"),
+                }
+              : null;
+
             const apiPayload = message.getMediaMessage(
               fileType,
               mediaPayload,
-              userProfile
+              userProfile,
+              context
             );
             const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
 
@@ -1671,6 +1745,8 @@ const ChatBot = ({
                       content: mediaData.url,
                       status: "pending",
                       uploadProgress: 100,
+                      replyMessage: replyMessage,
+                      context: context,
                       apiPayload: apiPayload,
                       additionalData: {
                         fileName: mediaData.filename,
@@ -1680,6 +1756,7 @@ const ChatBot = ({
                   : msg
               )
             );
+            setReplyMessage(null);
           } else {
             throw new Error("Upload failed");
           }
@@ -1915,7 +1992,16 @@ const ChatBot = ({
     message.phone_number_id = session.phone_number.value.id;
     message.wa_id = wa_id;
 
-    const apiPayload = message.getContactMessage(contactData, userProfile);
+    const context = replyMessage
+      ? {
+          id: replyMessage.id,
+          from: replyMessage.isUser
+            ? (replyMessage.from || wa_id)
+            : (session.phone_number.value.display_phone_number || "business"),
+        }
+      : null;
+
+    const apiPayload = message.getContactMessage(contactData, userProfile, context);
     const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
 
     const newMessage = {
@@ -1927,10 +2013,13 @@ const ChatBot = ({
       },
       isUser: true,
       status: "pending",
+      replyMessage: replyMessage,
+      context: context,
       apiPayload: apiPayload,
     };
 
     setMessages((prev) => [...prev, newMessage]);
+    setReplyMessage(null);
     setContactData({
       formattedName: "John Contact",
       firstName: "John",
@@ -1972,7 +2061,16 @@ const ChatBot = ({
     message.phone_number_id = session.phone_number.value.id;
     message.wa_id = wa_id;
 
-    const apiPayload = message.getLocationMessage(locationData, userProfile);
+    const context = replyMessage
+      ? {
+          id: replyMessage.id,
+          from: replyMessage.isUser
+            ? (replyMessage.from || wa_id)
+            : (session.phone_number.value.display_phone_number || "business"),
+        }
+      : null;
+
+    const apiPayload = message.getLocationMessage(locationData, userProfile, context);
     const msgId = apiPayload.entry[0].changes[0].value.messages[0].id;
 
     const newMessage = {
@@ -1986,10 +2084,13 @@ const ChatBot = ({
       },
       isUser: true,
       status: "pending",
+      replyMessage: replyMessage,
+      context: context,
       apiPayload: apiPayload,
     };
 
     setMessages((prev) => [...prev, newMessage]);
+    setReplyMessage(null);
     setLocationData({
       latitude: "37.7749",
       longitude: "-122.4194",
@@ -2736,6 +2837,7 @@ const ChatBot = ({
             <ChatMessage
               key={msg.id}
               message={msg}
+              messages={messages}
               updateMessageStatus={updateMessageStatus}
               primaryColor={primaryColor}
               darkMode={darkMode}
@@ -2790,7 +2892,7 @@ const ChatBot = ({
           <div className=" text-sm flex w-full item-center">
             <div className="space-y-1 ">
               <p className={`font-bold text-[#075E54]`}>
-                {replyMessage?.isUser ? "You" : "System"}{" "}
+                {replyMessage?.isUser ? "You" : "KWIC"}{" "}
               </p>
               {/* {replyMessage.type === "audio" && (
                 <audio controls className="h-6">

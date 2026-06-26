@@ -1105,7 +1105,7 @@ ApiRouter.get("/:dynamic_value/:wa_id/messages", async (req, res) => {
   const conversation_key = `message:${dynamic_value}:${wa_id}:*`;
   const data = await req.redisManager.getValuesByPattern(conversation_key);
 
-  const messages = data.map((item) => {
+  const messages = await Promise.all(data.map(async (item) => {
     const messageData = JSON.parse(item.value);
     const raw = messageData.message || messageData;
     const type =
@@ -1124,6 +1124,25 @@ ApiRouter.get("/:dynamic_value/:wa_id/messages", async (req, res) => {
         }
       } else {
         direction = fromVal === wa_id ? "incoming" : "outgoing";
+      }
+    }
+
+    // Resolve media link dynamically from Redis if it's an ID
+    const mediaTypes = ["image", "video", "audio", "document", "sticker"];
+    if (mediaTypes.includes(type) && raw?.[type]) {
+      const mediaObj = raw[type];
+      if (mediaObj && mediaObj.id && !mediaObj.link) {
+        try {
+          const mediaData = await req.redisManager.getByKey(`media:${mediaObj.id}`);
+          if (mediaData) {
+            mediaObj.link = mediaData.url || mediaData.link;
+          } else {
+            mediaObj.link = "https://static.kwic.in/nml/app/674ff1a5b90ae6db773e56d2.jpg";
+          }
+        } catch (e) {
+          console.error(`Error resolving media ID ${mediaObj.id}:`, e);
+          mediaObj.link = "https://static.kwic.in/nml/app/674ff1a5b90ae6db773e56d2.jpg";
+        }
       }
     }
 
@@ -1207,7 +1226,7 @@ ApiRouter.get("/:dynamic_value/:wa_id/messages", async (req, res) => {
       status: messageData.status || raw?.status || "sent",
       direction,
     };
-  });
+  }));
 
   const uniqueById = new Map();
   for (const m of messages) {

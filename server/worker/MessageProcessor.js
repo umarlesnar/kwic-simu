@@ -127,23 +127,25 @@ class MessageProcessor {
         created_at: new Date().toISOString(),
         status: "sent",
         messaging_product: value.messaging_product || "whatsapp",
+        referral: messageData.referral || null,
       };
 
       // Handle different message types
-      if (messageData.type === "order" && messageData.order) {
-        messageValue.order = messageData.order;
-      }
+      const mediaTypes = ["image", "video", "audio", "document", "location", "contacts", "sticker", "interactive", "order", "button"];
+      mediaTypes.forEach(type => {
+        if (messageData[type]) {
+          messageValue[type] = messageData[type];
+        }
+      });
 
-      // Handle interactive messages (including flow responses)
-      if (messageData.type === "interactive" && messageData.interactive) {
-        messageValue.interactive = messageData.interactive;
-
-        // Handle flow responses (nfm_reply)
-        if (
-          messageData.interactive.type === "nfm_reply" &&
-          messageData.interactive.nfm_reply
-        ) {
-          const nfmReply = messageData.interactive.nfm_reply;
+      // Handle flow responses (nfm_reply) for interactive messages
+      if (
+        messageData.type === "interactive" &&
+        messageData.interactive &&
+        messageData.interactive.type === "nfm_reply" &&
+        messageData.interactive.nfm_reply
+      ) {
+        const nfmReply = messageData.interactive.nfm_reply;
 
           // Store flow response in separate collection
           try {
@@ -168,7 +170,7 @@ class MessageProcessor {
             console.error("Error storing flow response:", flowError);
           }
         }
-      }
+      
 
       // Store with the correct key pattern that getChatMessages expects
       const messageKey = `message:${phone_number_id}:${wa_id}:${msg_id}`;
