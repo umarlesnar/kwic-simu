@@ -6,6 +6,8 @@ import {
   buildGroupJoinRequestCreated,
   buildGroupParticipantsAddInviteLinkSuccess,
   buildGroupJoinRequestsApprovedSuccess,
+  buildGroupParticipantsRemoveSuccess,
+  buildGroupParticipantsAddFail,
 } from "./wbGroupFailedWebhooks";
 
 async function resolveWba(wba_id, phone_number_id) {
@@ -104,6 +106,46 @@ export async function approveJoinRequestsViaClient({
     }
   }
 
+  // Handle failed join requests by pushing failure webhooks (showing failed_participants)
+  const failedIds = response.data?.failed_join_requests || [];
+  if (resolvedWbaId && failedIds.length > 0) {
+    const failedParticipants = failedIds.map((item) => {
+      const jr = joinRequestsList.find(
+        (r) => r.join_request_id === item.join_request_id || r.wa_id === item.join_request_id
+      );
+      let input = jr ? jr.wa_id : null;
+      if (!input) {
+        try {
+          const decoded = atob(item.join_request_id);
+          const parts = decoded.split(":");
+          if (parts.length >= 2) {
+            input = parts[1];
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+      if (!input) input = item.join_request_id;
+      return {
+        input,
+        errors: item.errors,
+      };
+    });
+
+    if (failedParticipants.length > 0) {
+      const isPartial = approvedIds.length > 0;
+      await WebhookService.push(
+        buildGroupParticipantsAddFail(
+          resolvedWbaId,
+          phone_number_id,
+          group_id,
+          failedParticipants,
+          isPartial
+        )
+      );
+    }
+  }
+
   return response.data;
 }
 
@@ -119,4 +161,38 @@ export async function rejectJoinRequestsViaClient({ group_id, join_requests }) {
     headers: groupsWebhookAuthHeaders(),
   });
   return response.data;
+}
+
+/**
+ * Leave group: API with client header (skip server webhook) + POST /webhook/push.
+ */
+export async function leaveGroupViaClient({ group_id, wa_id, wba_id }) {
+  const trimmedWaId = String(wa_id).trim();
+  const response = await axios.post(
+    "/v14.0/groups/leave",
+    { group_id: group_id.trim(), wa_id: trimmedWaId },
+    { headers: groupsWebhookAuthHeaders() }
+  );
+  const data = response.data;
+  const pnId = data.phone_number_id;
+  const resolvedWbaId = await resolveWba(wba_id, pnId);
+
+  if (!resolvedWbaId || !pnId) {
+    console.warn("leaveGroupViaClient: could not resolve wba_id; webhook push skipped");
+    return data;
+  }
+
+  if (data.status === "left") {
+    await WebhookService.push(
+      buildGroupParticipantsRemoveSuccess(
+        resolvedWbaId,
+        pnId,
+        { id: group_id },
+        [{ wa_id: trimmedWaId }],
+        "participant"
+      )
+    );
+  }
+
+  return data;
 }

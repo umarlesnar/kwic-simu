@@ -17,6 +17,9 @@ import {
   buildGroupDeleteSuccess,
   buildGroupParticipantsRemoveSuccess,
   buildGroupSettingsUpdateSuccess,
+  buildGroupParticipantsAddInviteLinkSuccess,
+  buildGroupJoinRequestCreated,
+  buildGroupParticipantsAddFail,
 } from "../utils/wbGroupFailedWebhooks";
 import { resolveWbaIdForPhone } from "../utils/resolveWbaId";
 import { groupsWebhookAuthHeaders } from "../utils/groupsApiHeaders";
@@ -42,6 +45,7 @@ function GroupDetailsModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [newParticipant, setNewParticipant] = useState("");
+  const [newParticipantDirect, setNewParticipantDirect] = useState("");
   const [joinRequests, setJoinRequests] = useState([]);
   const [inviteLink, setInviteLink] = useState(null);
 
@@ -137,23 +141,159 @@ function GroupDetailsModal({
 
     try {
       setLoading(true);
-      await axios.post(
-        `/v14.0/${phone_number_id}/groups/${group.id}/participants`,
+      const response = await axios.post(
+        `/v14.0/${group.id}/participants`,
         {
           messaging_product: "whatsapp",
           phone_numbers: [newParticipant.trim()],
         },
         {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || "eyJhcHBfaWQiOiIxNDAwMDAwMDAxIiwid2JhX2lkIjoiMTEwMDAwMDAwMSIsInBob25lX251bWJlcl9pZCI6IjEyMTcyMzI4In0"}`,
-          },
+          headers: groupsWebhookAuthHeaders(),
         },
       );
+
+      const data = response.data;
+      const resolvedWbaId = await effectiveWbaId();
+      const failedJoinRequests = data.failed_join_requests || [];
+      const failedIds = failedJoinRequests.map(f => f.join_request_id).filter(Boolean);
+
+      if (resolvedWbaId) {
+        if (failedIds.length > 0) {
+          await approveJoinRequestsViaClient({
+            group_id: group.id,
+            phone_number_id,
+            wba_id: resolvedWbaId,
+            join_requests: failedIds,
+            joinRequestsList: [],
+          });
+        }
+
+        // Push standard add failures only for non-join-request failures, if any
+        const nonJrFailedParticipants = (data.failed_participants || []).filter((p) => {
+          return !failedJoinRequests.some((f) => {
+            let decodedWaId = null;
+            try {
+              const decoded = atob(f.join_request_id);
+              const parts = decoded.split(":");
+              if (parts.length >= 2) {
+                decodedWaId = parts[1];
+              }
+            } catch (e) {
+              // ignore
+            }
+            const matchId = decodedWaId || f.join_request_id;
+            return matchId === p.input || matchId.includes(p.input) || p.input.includes(matchId);
+          });
+        });
+        if (nonJrFailedParticipants.length > 0) {
+          const is_partial = (Array.isArray(data.added_participants) && data.added_participants.length > 0) ||
+                             (data.status === "request_pending" && Array.isArray(data.join_requests) && data.join_requests.length > 0);
+          await WebhookService.push(
+            buildGroupParticipantsAddFail(
+              resolvedWbaId,
+              phone_number_id,
+              group.id,
+              nonJrFailedParticipants,
+              is_partial
+            )
+          );
+        }
+
+        if (data.status === "request_pending" && Array.isArray(data.join_requests)) {
+          for (const jr of data.join_requests) {
+            await WebhookService.push(
+              buildGroupJoinRequestCreated(
+                resolvedWbaId,
+                phone_number_id,
+                group,
+                {
+                  wa_id: jr.wa_id,
+                  join_request_id: jr.join_request_id,
+                  reason: "invite_link",
+                }
+              )
+            );
+          }
+        } else if ((data.status === "joined" || !data.status) && Array.isArray(data.added_participants)) {
+          for (const wa_id of data.added_participants) {
+            await WebhookService.push(
+              buildGroupParticipantsAddInviteLinkSuccess(
+                resolvedWbaId,
+                phone_number_id,
+                group.id,
+                wa_id
+              )
+            );
+          }
+        }
+      }
+
       setNewParticipant("");
+      if ((data.status === "request_pending" || failedIds.length > 0) && typeof fetchJoinRequests === "function") {
+        fetchJoinRequests();
+      }
       refreshGroup();
     } catch (err) {
       console.error("Error adding participant:", err);
       setError(err.response?.data?.error || "Failed to add participant");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddParticipantDirect = async () => {
+    if (!newParticipantDirect.trim()) return;
+
+    try {
+      setLoading(true);
+      const response = await axios.post(
+        `/v14.0/${group.id}/participants`,
+        {
+          messaging_product: "whatsapp",
+          phone_numbers: [newParticipantDirect.trim()],
+          bypass_approval: true,
+        },
+        {
+          headers: groupsWebhookAuthHeaders(),
+        },
+      );
+
+      const data = response.data;
+      const resolvedWbaId = await effectiveWbaId();
+
+      if (resolvedWbaId) {
+        if (Array.isArray(data.failed_participants) && data.failed_participants.length > 0) {
+          const is_partial = Array.isArray(data.added_participants) && data.added_participants.length > 0;
+          await WebhookService.push(
+            buildGroupParticipantsAddFail(
+              resolvedWbaId,
+              phone_number_id,
+              group.id,
+              data.failed_participants,
+              is_partial
+            )
+          );
+        }
+
+        if (Array.isArray(data.added_participants)) {
+          for (const wa_id of data.added_participants) {
+            await WebhookService.push(
+              buildGroupParticipantsAddInviteLinkSuccess(
+                resolvedWbaId,
+                phone_number_id,
+                group.id,
+                wa_id
+              )
+            );
+          }
+        }
+      }
+
+      setNewParticipantDirect("");
+      refreshGroup();
+    } catch (err) {
+      console.error("Error adding participant directly:", err);
+      setError(err.response?.data?.error || "Failed to add participant directly");
     } finally {
       setLoading(false);
     }
@@ -236,6 +376,7 @@ function GroupDetailsModal({
         },
       });
       onGroupUpdated(response.data);
+      fetchJoinRequests();
     } catch (err) {
       console.error("Error refreshing group:", err);
     }
@@ -458,14 +599,14 @@ function GroupDetailsModal({
               <div className="flex gap-2">
                 <input
                   type="text"
-                  value={newParticipant}
-                  onChange={(e) => setNewParticipant(e.target.value)}
+                  value={newParticipantDirect}
+                  onChange={(e) => setNewParticipantDirect(e.target.value)}
                   placeholder="Enter phone number (e.g. 919876543210)"
                   className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
-                  onClick={handleAddParticipant}
-                  disabled={loading || !newParticipant.trim()}
+                  onClick={handleAddParticipantDirect}
+                  disabled={loading || !newParticipantDirect.trim()}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
                 >
                   <MdAdd /> Add
@@ -523,6 +664,28 @@ function GroupDetailsModal({
 
           {activeTab === "join_requests" && (
             <div className="space-y-6">
+              <div className="flex flex-col gap-2 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600">
+                <label className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase">
+                  Numbers starting with 911451, 911452, 911453 will fail.
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newParticipant}
+                    onChange={(e) => setNewParticipant(e.target.value)}
+                    placeholder="Enter phone number (e.g. 919876543210)"
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={handleAddParticipant}
+                    disabled={loading || !newParticipant.trim()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <MdAdd /> Add
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-3">
                 <h4 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase">
                   Pending Requests ({joinRequests.length})

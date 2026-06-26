@@ -473,7 +473,8 @@ export function buildGroupParticipantsRemoveSuccess(
   wba_id,
   phone_number_id,
   group,
-  removed_participants
+  removed_participants,
+  initiated_by = "business"
 ) {
   const ts = String(Math.floor(Date.now() / 1000));
   return {
@@ -491,7 +492,7 @@ export function buildGroupParticipantsRemoveSuccess(
                   group_id: group.id,
                   type: "group_participants_remove",
                   request_id: group?.request_id,
-                  initiated_by: "business",
+                  initiated_by,
                   removed_participants,
                 },
               ],
@@ -587,6 +588,57 @@ function buildGroupJoinRequestLifecycle(
     wa_id: wa_id || "15550009999",
   };
   if (join_request_id) groupPayload.join_request_id = join_request_id;
+
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: wba_id,
+        changes: [
+          {
+            value: {
+              ...meta(phone_number_id),
+              groups: [groupPayload],
+            },
+            field: "group_participants_update",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildGroupParticipantsAddFail(
+  wba_id,
+  phone_number_id,
+  group_id,
+  failed_participants = [],
+  is_partial = false
+) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  const groupPayload = {
+    timestamp: ts,
+    group_id,
+    type: "group_participants_add",
+    reason: "invite_link",
+    failed_participants,
+  };
+
+  if (is_partial) {
+    groupPayload.errors = err(
+      131201,
+      "Not All Participants Add Succeeded",
+      "Failed to add some participants to the group",
+      "Simulated partial failure"
+    );
+  } else {
+    groupPayload.errors = err(
+      131202,
+      "Add failed",
+      "No participants added",
+      "Simulated total add failure"
+    );
+  }
 
   return {
     object: "whatsapp_business_account",

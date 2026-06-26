@@ -504,6 +504,33 @@ function validateJoinGroupByInviteLinkRequest(req) {
   };
 }
 
+/**
+ * Validates leave group request
+ * @param {object} req - Express request object
+ * @returns {object} Validation result with isValid boolean and errors array
+ */
+function validateLeaveGroupRequest(req) {
+  const errors = [];
+
+  const validation = validateRequiredFields(req.body, ["group_id", "wa_id"]);
+  if (!validation.isValid) {
+    errors.push(`Missing required fields: ${validation.missingFields.join(", ")}`);
+  }
+
+  if (req.body.wa_id && !isValidPhoneNumber(req.body.wa_id)) {
+    errors.push("Invalid wa_id format");
+  }
+
+  if (req.body.group_id && typeof req.body.group_id !== "string") {
+    errors.push("Group ID must be a string");
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+}
+
 module.exports = {
   validateCreateGroupRequest,
   validateGetGroupRequest,
@@ -519,4 +546,5 @@ module.exports = {
   validateSimulateJoinRequestRequest,
   validateListGroupsRequest,
   validateJoinGroupByInviteLinkRequest,
+  validateLeaveGroupRequest,
 };

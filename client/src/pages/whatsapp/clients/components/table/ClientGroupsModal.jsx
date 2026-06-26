@@ -13,10 +13,11 @@ import {
   MdPersonAdd,
   MdCheck,
   MdClose as MdCancel,
-  MdRefresh
+  MdRefresh,
+  MdDelete
 } from "react-icons/md";
 import GroupChatView from "../../../shared/components/GroupChatView";
-import { joinGroupViaInvite } from "../../../groups/utils/groupWebhookClientActions";
+import { joinGroupViaInvite, leaveGroupViaClient } from "../../../groups/utils/groupWebhookClientActions";
 
 const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, initialGroupId }) => {
   const [view, setView] = useState("list"); // 'list', 'chat', 'join'
@@ -73,6 +74,25 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, i
   const handleRefresh = () => {
     if (view === "list") {
       fetchGroups();
+    }
+  };
+
+  const handleLeaveGroup = async (group) => {
+    if (!window.confirm(`Are you sure you want to leave the group "${group.subject}"?`)) return;
+
+    try {
+      setLoading(true);
+      await leaveGroupViaClient({
+        group_id: group.id,
+        wa_id: client.wa_id,
+        wba_id,
+      });
+      toast.success("Successfully left the group!");
+      fetchGroups();
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || "Failed to leave group");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -195,12 +215,21 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, i
                       <h3 className="font-bold text-gray-900 dark:text-white">{group.subject}</h3>
                       <p className="text-xs text-gray-500 mt-1">{group.participant_count} members</p>
                     </div>
-                    <button
-                      onClick={() => handleOpenChat(group)}
-                      className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-                    >
-                      Chat
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleOpenChat(group)}
+                        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                      >
+                        Chat
+                      </button>
+                      <button
+                        onClick={() => handleLeaveGroup(group)}
+                        className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        title="Leave Group"
+                      >
+                        <MdDelete className="text-xl" />
+                      </button>
+                    </div>
 
                   </div>
                 ))

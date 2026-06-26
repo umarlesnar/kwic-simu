@@ -199,14 +199,14 @@ function buildGroupParticipantsRemoveSuccess(
   wba_id,
   phone_number_id,
   group,
-  { removed_participants = [], request_id } = {}
+  { removed_participants = [], request_id, initiated_by = "business" } = {}
 ) {
   const ts = String(Math.floor(Date.now() / 1000));
   const groupPayload = {
     timestamp: ts,
     group_id: group.id,
     type: "group_participants_remove",
-    initiated_by: "business",
+    initiated_by,
     removed_participants,
   };
   if (request_id) groupPayload.request_id = request_id;
@@ -303,6 +303,61 @@ function buildGroupJoinRequestLifecycle(
   };
 }
 
+function buildGroupParticipantsAddFail(
+  wba_id,
+  phone_number_id,
+  group_id,
+  failed_participants = [],
+  is_partial = false
+) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  const groupPayload = {
+    timestamp: ts,
+    group_id,
+    type: "group_participants_add",
+    reason: "invite_link",
+    failed_participants,
+  };
+
+  if (is_partial) {
+    groupPayload.errors = [
+      {
+        code: "131201",
+        title: "Not All Participants Add Succeeded",
+        message: "Failed to add some participants to the group",
+        error_data: { details: "Simulated partial failure" },
+      },
+    ];
+  } else {
+    groupPayload.errors = [
+      {
+        code: "131202",
+        title: "Add failed",
+        message: "No participants added",
+        error_data: { details: "Simulated total add failure" },
+      },
+    ];
+  }
+
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: wba_id,
+        changes: [
+          {
+            value: {
+              ...meta(phone_number_id),
+              groups: [groupPayload],
+            },
+            field: "group_participants_update",
+          },
+        ],
+      },
+    ],
+  };
+}
+
 module.exports = {
   buildGroupCreateSuccess,
   buildGroupCreateFail,
@@ -312,4 +367,5 @@ module.exports = {
   buildGroupParticipantsRemoveSuccess,
   buildGroupJoinRequestsApprovedSuccess,
   buildGroupJoinRequestLifecycle,
+  buildGroupParticipantsAddFail,
 };
