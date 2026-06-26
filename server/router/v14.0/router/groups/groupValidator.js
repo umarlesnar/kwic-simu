@@ -43,13 +43,26 @@ function validateCreateGroupRequest(req) {
   }
 
   // Validate subject
-  if (req.body.subject && typeof req.body.subject !== "string") {
-    errors.push("Subject must be a string");
+  if (req.body.subject !== undefined) {
+    if (typeof req.body.subject !== "string") {
+      errors.push("Subject must be a string");
+    } else {
+      const trimmedSubject = req.body.subject.trim();
+      if (trimmedSubject.length === 0) {
+        errors.push("Subject must not be empty");
+      } else if (trimmedSubject.length > 128) {
+        errors.push("Subject length exceeds maximum of 128 characters");
+      }
+    }
   }
 
   // Validate description
-  if (req.body.description && typeof req.body.description !== "string") {
-    errors.push("Description must be a string");
+  if (req.body.description !== undefined) {
+    if (typeof req.body.description !== "string") {
+      errors.push("Description must be a string");
+    } else if (req.body.description.length > 2048) {
+      errors.push("Description length exceeds maximum of 2048 characters");
+    }
   }
 
   // Validate join_approval_mode
@@ -133,13 +146,26 @@ function validateUpdateGroupRequest(req) {
   }
 
   // Validate subject if provided
-  if (req.body.subject && typeof req.body.subject !== "string") {
-    errors.push("Subject must be a string");
+  if (req.body.subject !== undefined) {
+    if (typeof req.body.subject !== "string") {
+      errors.push("Subject must be a string");
+    } else {
+      const trimmedSubject = req.body.subject.trim();
+      if (trimmedSubject.length === 0) {
+        errors.push("Subject must not be empty if provided");
+      } else if (trimmedSubject.length > 128) {
+        errors.push("Subject length exceeds maximum of 128 characters");
+      }
+    }
   }
 
   // Validate description if provided
-  if (req.body.description && typeof req.body.description !== "string") {
-    errors.push("Description must be a string");
+  if (req.body.description !== undefined) {
+    if (typeof req.body.description !== "string") {
+      errors.push("Description must be a string");
+    } else if (req.body.description.length > 2048) {
+      errors.push("Description length exceeds maximum of 2048 characters");
+    }
   }
 
   // Validate join_approval_mode if provided
@@ -150,6 +176,30 @@ function validateUpdateGroupRequest(req) {
     errors.push(
       'join_approval_mode must be "approval_required" or "auto_approve"'
     );
+  }
+
+  // Validate profile_picture_file if provided
+  if (req.body.profile_picture_file !== undefined) {
+    if (typeof req.body.profile_picture_file !== "string") {
+      errors.push("profile_picture_file must be a string path");
+    } else {
+      const lowerPath = req.body.profile_picture_file.toLowerCase();
+      if (!lowerPath.endsWith(".jpg") && !lowerPath.endsWith(".jpeg")) {
+        errors.push("Only support mime type image/jpeg");
+      } else {
+        try {
+          const fs = require("fs");
+          if (fs.existsSync(req.body.profile_picture_file)) {
+            const stats = fs.statSync(req.body.profile_picture_file);
+            if (stats.size > 5 * 1024 * 1024) {
+              errors.push("Maximum size: 5MB");
+            }
+          }
+        } catch (e) {
+          // ignore fs check error
+        }
+      }
+    }
   }
 
   return {
@@ -230,6 +280,11 @@ function validateRemoveParticipantRequest(req) {
     errors.push("Invalid group_id format");
   }
 
+  // Validate messaging_product in body
+  if (!req.body?.messaging_product || req.body.messaging_product !== "whatsapp") {
+    errors.push('messaging_product must be "whatsapp"');
+  }
+
   // Two supported shapes:
   // 1) Bulk remove via body.participants (Meta format)
   // 2) Legacy remove via :wa_id path param (if ever added later)
@@ -242,6 +297,9 @@ function validateRemoveParticipantRequest(req) {
     if (!Array.isArray(participants) || participants.length === 0) {
       errors.push("participants must be a non-empty array");
     } else {
+      if (participants.length > 8) {
+        errors.push("Maximum 8 participants allowed");
+      }
       const waIds = participants
         .map((p) => (typeof p === "string" ? p : p.user || p.wa_id))
         .filter(Boolean);
@@ -298,6 +356,11 @@ function validateResetInviteLinkRequest(req) {
 
   if (!isValidGroupId(req.params.group_id)) {
     errors.push("Invalid group_id format");
+  }
+
+  // Validate messaging_product in body
+  if (!req.body?.messaging_product || req.body.messaging_product !== "whatsapp") {
+    errors.push('messaging_product must be "whatsapp"');
   }
 
   return {

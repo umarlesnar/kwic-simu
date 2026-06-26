@@ -55,6 +55,7 @@ const {
   getInviteLink,
   resetInviteLink,
   findGroupsByParticipant,
+  findJoinRequestsByParticipant,
   joinGroupByInviteLink,
   savePendingGroupCreation,
   loadPendingGroupCreation,
@@ -214,11 +215,12 @@ router.post("/:phone_number_id/groups", resolveWbaIdMiddleware, async (req, res)
       );
     }
 
+    const trimmedSubject = subject ? subject.trim() : "";
     const mode = join_approval_mode || "auto_approve";
 
     const pending = await savePendingGroupCreation(req.redisManager, {
       phone_number_id,
-      subject,
+      subject: trimmedSubject,
       description: description || "",
       join_approval_mode: mode,
     });
@@ -492,6 +494,32 @@ router.get("/:phone_number_id/participant/:wa_id/groups", async (req, res) => {
   }
 });
 
+/**
+ * GET /:phone_number_id/participant/:wa_id/join_requests
+ * List all pending join requests for a specific participant
+ */
+router.get("/:phone_number_id/participant/:wa_id/join_requests", async (req, res) => {
+  try {
+    const { phone_number_id, wa_id } = req.params;
+
+    const joinRequests = await findJoinRequestsByParticipant(
+      req.redisManager,
+      phone_number_id,
+      wa_id
+    );
+    res.status(HTTP_STATUS.OK).json({
+      data: joinRequests,
+    });
+  } catch (error) {
+    console.error("Error finding join requests for participant:", error);
+    sendErrorResponse(
+      res,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      ERROR_MESSAGES.INTERNAL_SERVER_ERROR
+    );
+  }
+});
+
 // --- Top-level Group Routes (Aliased) ---
 
 /**
@@ -511,13 +539,39 @@ router.get("/:group_id", async (req, res, next) => {
   }
 
   try {
+    req.params.phone_number_id = phone_number_id;
+    const validation = validateGetGroupRequest(req);
+    if (!validation.isValid) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, validation.errors[0]);
+    }
+
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) return res.status(HTTP_STATUS.BAD_REQUEST).json({
       error: ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN],
       status: HTTP_STATUS.BAD_REQUEST,
       code: GROUP_ERROR_CODES.GROUP_UNKNOWN
     });
-    res.status(HTTP_STATUS.OK).json(formatGroupResponse(group));
+
+    const fullResponse = formatGroupResponse(group);
+    const fieldsParam = req.query.fields;
+    
+    let responseData = {
+      messaging_product: "whatsapp",
+      id: fullResponse.id,
+    };
+
+    if (fieldsParam) {
+      const requestedFields = fieldsParam.split(",").map((f) => f.trim());
+      for (const field of requestedFields) {
+        if (fullResponse.hasOwnProperty(field)) {
+          responseData[field] = fullResponse[field];
+        }
+      }
+    } else {
+      responseData = fullResponse;
+    }
+
+    res.status(HTTP_STATUS.OK).json(responseData);
   } catch (error) {
     next(error);
   }
@@ -560,9 +614,40 @@ router.post("/:group_id", resolveWbaIdMiddleware, async (req, res, next) => {
     const { subject, description, join_approval_mode } = req.body;
     const settingsParts = {};
 
+    // Simulate image error triggers
+    // if (profile_picture_file) {
+    //   if (profile_picture_file.includes("invalid_aspect")) {
+    //     return sendErrorResponse(
+    //       res,
+    //       HTTP_STATUS.BAD_REQUEST,
+    //       ERROR_MESSAGES[GROUP_ERROR_CODES.INVALID_IMAGE_ASPECT_RATIO],
+    //       "Simulated aspect ratio failure",
+    //       GROUP_ERROR_CODES.INVALID_IMAGE_ASPECT_RATIO
+    //     );
+    //   }
+    //   if (profile_picture_file.includes("too_small")) {
+    //     return sendErrorResponse(
+    //       res,
+    //       HTTP_STATUS.BAD_REQUEST,
+    //       ERROR_MESSAGES[GROUP_ERROR_CODES.IMAGE_TOO_SMALL],
+    //       "Simulated image too small failure",
+    //       GROUP_ERROR_CODES.IMAGE_TOO_SMALL
+    //     );
+    //   }
+    //   if (profile_picture_file.includes("fail") || profile_picture_file.includes("error")) {
+    //     return sendErrorResponse(
+    //       res,
+    //       HTTP_STATUS.BAD_REQUEST,
+    //       "Unable to upload profile picture.",
+    //       "Simulated profile picture upload failure",
+    //       131203
+    //     );
+    //   }
+    // }
+
     if (subject !== undefined) {
-      group.subject = subject;
-      settingsParts.subject = subject;
+      group.subject = subject.trim();
+      settingsParts.subject = subject.trim();
     }
 
     if (description !== undefined) {
@@ -574,6 +659,15 @@ router.post("/:group_id", resolveWbaIdMiddleware, async (req, res, next) => {
       group.join_approval_mode = join_approval_mode;
       settingsParts.join_approval_mode = join_approval_mode;
     }
+
+    // if (profile_picture_file !== undefined) {
+    //   group.profile_picture_file = profile_picture_file;
+    //   settingsParts.profile_picture = {
+    //     mime_type: "image/jpeg",
+    //     update_successful: true,
+    //     sha256: require("crypto").createHash("sha256").update(profile_picture_file).digest("hex"),
+    //   };
+    // }
 
     const updatedGroup = await updateGroupInRedis(req.redisManager, phone_number_id, group);
 
@@ -627,6 +721,13 @@ router.delete("/:group_id", resolveWbaIdMiddleware, async (req, res, next) => {
   }
 
   try {
+    req.params.phone_number_id = phone_number_id;
+    req.params.group_id = group_id;
+    const validation = validateDeleteGroupRequest(req);
+    if (!validation.isValid) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, validation.errors[0]);
+    }
+
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
       return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
@@ -683,6 +784,13 @@ router.get("/:group_id/invite_link", async (req, res, next) => {
   }
 
   try {
+    req.params.phone_number_id = phone_number_id;
+    req.params.group_id = group_id;
+    const validation = validateGetInviteLinkRequest(req);
+    if (!validation.isValid) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, validation.errors[0]);
+    }
+
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
       return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
@@ -720,6 +828,13 @@ router.post("/:group_id/invite_link", async (req, res, next) => {
   }
 
   try {
+    req.params.phone_number_id = phone_number_id;
+    req.params.group_id = group_id;
+    const validation = validateResetInviteLinkRequest(req);
+    if (!validation.isValid) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, validation.errors[0]);
+    }
+
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
       return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
@@ -754,6 +869,13 @@ router.get("/:group_id/join_requests", async (req, res, next) => {
   }
 
   try {
+    req.params.phone_number_id = phone_number_id;
+    req.params.group_id = group_id;
+    const validation = validateGetJoinRequestsRequest(req);
+    if (!validation.isValid) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, validation.errors[0]);
+    }
+
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
       return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
@@ -987,11 +1109,22 @@ router.delete("/:group_id/join_requests", async (req, res, next) => {
       }
     }
 
-    return res.status(HTTP_STATUS.OK).json({
+    const responsePayload = {
       messaging_product: "whatsapp",
       rejected_join_requests,
-      ...(failed_join_requests.length > 0 ? { failed_join_requests } : {}),
-    });
+    };
+
+    if (failed_join_requests.length > 0) {
+      responsePayload.failed_join_requests = failed_join_requests;
+      responsePayload.errors = failed_join_requests.reduce((acc, curr) => {
+        if (Array.isArray(curr.errors)) {
+          acc.push(...curr.errors);
+        }
+        return acc;
+      }, []);
+    }
+
+    return res.status(HTTP_STATUS.OK).json(responsePayload);
   } catch (e) {
     return next(e);
   }
@@ -1257,15 +1390,19 @@ router.delete("/:group_id/participants", resolveWbaIdMiddleware, async (req, res
   }
 
   try {
+    req.params.phone_number_id = phone_number_id;
+    req.params.group_id = group_id;
+    const validation = validateRemoveParticipantRequest(req);
+    if (!validation.isValid) {
+      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, validation.errors[0]);
+    }
+
     const group = await getGroupFromRedis(req.redisManager, phone_number_id, group_id);
     if (!group) {
       return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, ERROR_MESSAGES[GROUP_ERROR_CODES.GROUP_UNKNOWN], null, GROUP_ERROR_CODES.GROUP_UNKNOWN);
     }
 
     const { participants } = req.body || {};
-    if (!Array.isArray(participants) || participants.length === 0) {
-      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, "participants must be a non-empty array");
-    }
     const waIds = participants.map((p) => (typeof p === "string" ? p : (p.user || p.wa_id))).filter(Boolean);
 
     const removed_participants = [];
@@ -1330,6 +1467,7 @@ router.delete("/:group_id/participants", resolveWbaIdMiddleware, async (req, res
       request_id: requestId,
       removed_participants,
       ...(failed_participants.length > 0 ? { failed_participants } : {}),
+      ...(groupErrors.length > 0 ? { errors: groupErrors } : {}),
     });
   } catch (e) {
     return next(e);
@@ -1525,6 +1663,97 @@ router.post("/groups/leave", resolveWbaIdMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Error leaving group:", error);
     sendErrorResponse(res, HTTP_STATUS.INTERNAL_SERVER_ERROR, ERROR_MESSAGES.INTERNAL_SERVER_ERROR);
+  }
+});
+
+/**
+ * POST /groups/join_requests/cancel
+ * Cancel a pending join request by a participant
+ */
+router.post("/groups/join_requests/cancel", resolveWbaIdMiddleware, async (req, res, next) => {
+  try {
+    const { group_id, wa_id, join_request_id } = req.body;
+    if (!group_id || !wa_id || !join_request_id) {
+      return sendErrorResponse(
+        res,
+        HTTP_STATUS.BAD_REQUEST,
+        "Missing required fields: group_id, wa_id, or join_request_id"
+      );
+    }
+
+    const phone_number_id = await getPhoneNumberIdByGroupId(req.redisManager, group_id);
+    if (!phone_number_id) {
+      return sendErrorResponse(
+        res,
+        HTTP_STATUS.NOT_FOUND,
+        "Group not found"
+      );
+    }
+
+    const removed = await removeJoinRequest(
+      req.redisManager,
+      phone_number_id,
+      group_id,
+      join_request_id
+    );
+
+    if (!removed) {
+      return sendErrorResponse(
+        res,
+        HTTP_STATUS.BAD_REQUEST,
+        "Join request not found or already processed"
+      );
+    }
+
+    req.params.phone_number_id = phone_number_id;
+    await resolveWbaIdForRequest(req.redisManager, req);
+    const wbaId = getResolvedWbaId(req);
+
+    if (wbaId) {
+      await pushGroupWebhookUnlessClient(
+        req,
+        req.redisStreamManager,
+        buildGroupJoinRequestLifecycle(
+          wbaId,
+          phone_number_id,
+          group_id,
+          "group_join_request_revoked",
+          {
+            wa_id,
+            join_request_id,
+            reason: "invite_link",
+          }
+        )
+      );
+    }
+
+    // Emit Socket.IO event
+    const io = require("../../../../utils/ws/SocketManager").getIO();
+    if (io) {
+      io.to(`group/${phone_number_id}`).emit("topic-data", {
+        topic: `group/${phone_number_id}`,
+        data: {
+          group_id,
+          action: "join_request_cancelled",
+          wa_id,
+          join_request_id,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    res.status(HTTP_STATUS.OK).json({
+      messaging_product: "whatsapp",
+      success: true,
+      status: "cancelled",
+      group_id,
+      wa_id,
+      join_request_id,
+      phone_number_id,
+    });
+  } catch (error) {
+    console.error("Error cancelling join request:", error);
+    next(error);
   }
 });
 

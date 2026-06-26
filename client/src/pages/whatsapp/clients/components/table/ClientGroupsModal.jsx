@@ -17,7 +17,7 @@ import {
   MdDelete
 } from "react-icons/md";
 import GroupChatView from "../../../shared/components/GroupChatView";
-import { joinGroupViaInvite, leaveGroupViaClient } from "../../../groups/utils/groupWebhookClientActions";
+import { joinGroupViaInvite, leaveGroupViaClient, cancelJoinRequestViaClient } from "../../../groups/utils/groupWebhookClientActions";
 
 const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, initialGroupId }) => {
   const [view, setView] = useState("list"); // 'list', 'chat', 'join'
@@ -28,6 +28,11 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, i
   // Join Group State
   const [inviteLink, setInviteLink] = useState("");
   const [isJoining, setIsJoining] = useState(false);
+
+  // Pending Join Requests State
+  const [activeTab, setActiveTab] = useState("joined"); // 'joined' | 'pending'
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
   
   const fetchGroups = useCallback(async () => {
     if (!client?.wa_id) return;
@@ -42,11 +47,28 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, i
     }
   }, [phone_number_id, client]);
 
+  const fetchPendingRequests = useCallback(async () => {
+    if (!client?.wa_id) return;
+    try {
+      setLoadingRequests(true);
+      const response = await businessService.getClientJoinRequests(phone_number_id, client.wa_id);
+      setPendingRequests(response.data || []);
+    } catch (err) {
+      toast.error("Failed to fetch client pending requests: " + err.message);
+    } finally {
+      setLoadingRequests(false);
+    }
+  }, [phone_number_id, client]);
+
   useEffect(() => {
     if (isOpen && view === "list") {
-      fetchGroups();
+      if (activeTab === "joined") {
+        fetchGroups();
+      } else {
+        fetchPendingRequests();
+      }
     }
-  }, [isOpen, view, fetchGroups]);
+  }, [isOpen, view, activeTab, fetchGroups, fetchPendingRequests]);
 
   const handleOpenChat = useCallback((group) => {
     const absolutePath =
@@ -73,7 +95,11 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, i
 
   const handleRefresh = () => {
     if (view === "list") {
-      fetchGroups();
+      if (activeTab === "joined") {
+        fetchGroups();
+      } else {
+        fetchPendingRequests();
+      }
     }
   };
 
@@ -96,6 +122,27 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, i
     }
   };
 
+  const handleCancelRequest = async (request) => {
+    if (!window.confirm(`Are you sure you want to cancel your join request for "${request.group_subject}"?`)) return;
+
+    try {
+      setLoadingRequests(true);
+      await cancelJoinRequestViaClient({
+        group_id: request.group_id,
+        phone_number_id,
+        wba_id,
+        join_request_id: request.join_request_id,
+        wa_id: client.wa_id,
+      });
+      toast.success("Join request cancelled successfully!");
+      fetchPendingRequests();
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || "Failed to cancel request");
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
   const handleJoinGroup = async (e) => {
     e?.preventDefault();
     if (!inviteLink.trim() || isJoining) return;
@@ -112,11 +159,14 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, i
         toast.success("Successfully joined the group!");
         setInviteLink("");
         setView("list");
+        setActiveTab("joined");
         fetchGroups();
       } else if (response.status === "request_pending") {
         toast.info("Join request sent. Waiting for approval.");
         setInviteLink("");
         setView("list");
+        setActiveTab("pending");
+        fetchPendingRequests();
       }
     } catch (err) {
       toast.error(err.message || "Failed to join group");
@@ -188,6 +238,31 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, i
         <div className="flex-1 overflow-hidden flex flex-col relative bg-gray-50 dark:bg-gray-900/50">
           
           {view === "list" && (
+            <div className="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4">
+              <button
+                onClick={() => setActiveTab("joined")}
+                className={`py-2.5 px-4 font-semibold text-sm border-b-2 transition-colors -mb-px ${
+                  activeTab === "joined"
+                    ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                    : "border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                }`}
+              >
+                Joined Groups ({groups.length})
+              </button>
+              <button
+                onClick={() => setActiveTab("pending")}
+                className={`py-2.5 px-4 font-semibold text-sm border-b-2 transition-colors -mb-px ${
+                  activeTab === "pending"
+                    ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                    : "border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                }`}
+              >
+                Pending Requests ({pendingRequests.length})
+              </button>
+            </div>
+          )}
+
+          {view === "list" && activeTab === "joined" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {loading ? (
                 <div className="flex flex-col items-center justify-center py-20">
@@ -231,6 +306,53 @@ const ClientGroupsModal = ({ isOpen, onClose, phone_number_id, wba_id, client, i
                       </button>
                     </div>
 
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {view === "list" && activeTab === "pending" && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {loadingRequests ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <ImSpinner11 className="text-4xl text-blue-600 animate-spin mb-4" />
+                  <p className="text-gray-500">Fetching pending requests...</p>
+                </div>
+              ) : pendingRequests.length === 0 ? (
+                <div className="text-center py-20">
+                  <MdGroups className="text-6xl text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 font-medium">No pending group requests</p>
+                  <button
+                    onClick={() => setView("join")}
+                    className="mt-4 px-4 py-2 text-blue-600 font-bold hover:underline"
+                  >
+                    Join a group using invite link
+                  </button>
+                </div>
+              ) : (
+                pendingRequests.map((request) => (
+                  <div
+                    key={request.join_request_id || request.group_id}
+                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 flex justify-between items-center hover:shadow-md transition-shadow group"
+                  >
+                    <div>
+                      <h3 className="font-bold text-gray-900 dark:text-white">{request.group_subject}</h3>
+                      <p className="text-xs text-gray-500 mt-1 font-mono">
+                        Request ID: {request.join_request_id}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Requested on {new Date(request.requested_at || (request.creation_timestamp * 1000)).toLocaleString()}
+                      </p>
+                    </div>
+                    <div>
+                      <button
+                        onClick={() => handleCancelRequest(request)}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      >
+                        Cancel Request
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

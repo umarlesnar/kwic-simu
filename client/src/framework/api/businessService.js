@@ -245,6 +245,18 @@ export const businessService = {
     }
   },
 
+  // Get pending join requests for a specific client
+  getClientJoinRequests: async (phone_number_id, wa_id) => {
+    try {
+      const response = await http.get(`/${phone_number_id}/participant/${wa_id}/join_requests`);
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.message || "Failed to fetch client join requests"
+      );
+    }
+  },
+
   // Upload media
   uploadMedia: async (formData) => {
     try {

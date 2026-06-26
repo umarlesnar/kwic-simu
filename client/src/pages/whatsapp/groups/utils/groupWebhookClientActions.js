@@ -4,6 +4,7 @@ import { groupsWebhookAuthHeaders } from "./groupsApiHeaders";
 import { resolveWbaIdForPhone } from "./resolveWbaId";
 import {
   buildGroupJoinRequestCreated,
+  buildGroupJoinRequestRevoked,
   buildGroupParticipantsAddInviteLinkSuccess,
   buildGroupJoinRequestsApprovedSuccess,
   buildGroupParticipantsRemoveSuccess,
@@ -190,6 +191,49 @@ export async function leaveGroupViaClient({ group_id, wa_id, wba_id }) {
         { id: group_id },
         [{ wa_id: trimmedWaId }],
         "participant"
+      )
+    );
+  }
+
+  return data;
+}
+
+/**
+ * Cancel a join request: API with client header (skip server webhook) + POST /webhook/push.
+ */
+export async function cancelJoinRequestViaClient({
+  group_id,
+  phone_number_id,
+  wba_id,
+  join_request_id,
+  wa_id,
+}) {
+  const trimmedWaId = String(wa_id).trim();
+  const response = await axios.post(
+    "/v14.0/groups/join_requests/cancel",
+    { group_id, wa_id: trimmedWaId, join_request_id },
+    { headers: groupsWebhookAuthHeaders() }
+  );
+  const data = response.data;
+  const pnId = data.phone_number_id || phone_number_id;
+  const resolvedWbaId = await resolveWba(wba_id, pnId);
+
+  if (!resolvedWbaId) {
+    console.warn("cancelJoinRequestViaClient: could not resolve wba_id; webhook push skipped");
+    return data;
+  }
+
+  if (data.status === "cancelled") {
+    await WebhookService.push(
+      buildGroupJoinRequestRevoked(
+        resolvedWbaId,
+        pnId,
+        { id: group_id },
+        {
+          wa_id: trimmedWaId,
+          join_request_id,
+          reason: "invite_link",
+        }
       )
     );
   }

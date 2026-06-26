@@ -81,7 +81,8 @@ async function generateTestGroups(redisManager, redisStreamManager, phoneNumberI
     const shuffledPhones = [...SAMPLE_PHONE_NUMBERS].sort(() => 0.5 - Math.random());
     const participantsToAdd = shuffledPhones.slice(0, participantCount);
     
-    group.participants = [phoneNumberId, ...participantsToAdd];
+    const businessWaId = group.business_wa_id || phoneNumberId;
+    group.participants = [businessWaId, ...participantsToAdd];
     group.participant_count = group.participants.length;
     
     // Update in Redis

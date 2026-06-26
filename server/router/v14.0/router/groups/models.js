@@ -120,8 +120,11 @@ function generateInviteLinkToken() {
  */
 function formatGroupResponse(group) {
   const businessId = group.phone_number_id;
-  const waIds = group.participants.map((p) => (typeof p === "string" ? p : p.wa_id));
-  const totalExcludingBusiness = waIds.filter((id) => id !== businessId).length;
+  const businessWaId = group.business_wa_id;
+  const resolvedWaIds = (group.participants || []).map((p) => {
+    const id = typeof p === "string" ? p : p.wa_id;
+    return id === businessId && businessWaId ? businessWaId : id;
+  });
 
   return {
     messaging_product: "whatsapp",
@@ -129,10 +132,10 @@ function formatGroupResponse(group) {
     subject: group.subject,
     description: group.description,
     join_approval_mode: group.join_approval_mode,
-    participants: group.participants.map((p) => ({
-      wa_id: typeof p === "string" ? p : p.wa_id,
+    participants: resolvedWaIds.map((waId) => ({
+      wa_id: waId,
     })),
-    total_participant_count: totalExcludingBusiness,
+    total_participant_count: resolvedWaIds.length,
     creation_timestamp: Math.floor(new Date(group.created_at).getTime() / 1000),
     suspended: group.suspended || false,
     ...(group.request_id ? { request_id: group.request_id } : {}),
@@ -147,15 +150,18 @@ function formatGroupResponse(group) {
 function formatGroupListResponse(group) {
   const ts = Math.floor(new Date(group.created_at).getTime() / 1000);
   const businessId = group.phone_number_id;
-  const waIds = (group.participants || []).map((p) => (typeof p === "string" ? p : p.wa_id));
-  const totalExcludingBusiness = waIds.filter((id) => id !== businessId).length;
+  const businessWaId = group.business_wa_id;
+  const resolvedWaIds = (group.participants || []).map((p) => {
+    const id = typeof p === "string" ? p : p.wa_id;
+    return id === businessId && businessWaId ? businessWaId : id;
+  });
   return {
     id: group.id,
     subject: group.subject,
     created_at: String(ts),
     description: group.description,
     join_approval_mode: group.join_approval_mode,
-    total_participant_count: totalExcludingBusiness,
+    total_participant_count: resolvedWaIds.length,
     creation_timestamp: String(ts),
     ...(group.request_id ? { request_id: group.request_id } : {}),
   };

@@ -103,6 +103,26 @@ function getSimulatedGroupCreateDelayMs(joinApprovalMode) {
     : GROUP_CREATE_DELAY_AUTO_MS;
 }
 
+async function resolveDisplayPhoneNumber(redisManager, phoneNumberId) {
+  if (!phoneNumberId) return null;
+  const pattern = `whatsapp:*:${phoneNumberId}`;
+  const keys = await redisManager.keys(pattern);
+  if (keys && keys.length > 0) {
+    const raw = await redisManager.get(keys[0]);
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        if (data && data.display_phone_number) {
+          return data.display_phone_number.replace(/\D/g, "");
+        }
+      } catch (e) {
+        console.error("Error parsing business phone number:", e);
+      }
+    }
+  }
+  return String(phoneNumberId).replace(/\D/g, "");
+}
+
 /**
  * Creates a new group in Redis
  * @param {object} redisManager - Redis manager instance
@@ -113,9 +133,10 @@ function getSimulatedGroupCreateDelayMs(joinApprovalMode) {
 async function createGroupInRedis(redisManagerWrapper, phoneNumberId, groupData) {
   try {
     const redisManager = await redisManagerWrapper.getClient();
+    const creatorPhone = await resolveDisplayPhoneNumber(redisManager, phoneNumberId);
     const participants = groupData.participants || [];
-    if (!participants.includes(phoneNumberId)) {
-      participants.unshift(phoneNumberId);
+    if (creatorPhone && !participants.includes(creatorPhone)) {
+      participants.unshift(creatorPhone);
     }
 
     const group = createGroup({
@@ -123,6 +144,10 @@ async function createGroupInRedis(redisManagerWrapper, phoneNumberId, groupData)
       ...groupData,
       participants,
     });
+
+    if (creatorPhone) {
+      group.business_wa_id = creatorPhone;
+    }
 
     // Generate invite link
     const inviteInfo = generateInviteLinkUrl(phoneNumberId, group.id);
@@ -701,6 +726,42 @@ async function findGroupsByParticipant(redisManagerWrapper, phoneNumberId, waId)
 }
 
 /**
+ * Finds all pending join requests a specific participant has made
+ * @param {object} redisManagerWrapper - Redis manager wrapper instance
+ * @param {string} phoneNumberId - Phone number ID of the business
+ * @param {string} waId - WhatsApp ID of the participant to search for
+ * @returns {array} Array of join requests
+ */
+async function findJoinRequestsByParticipant(redisManagerWrapper, phoneNumberId, waId) {
+  try {
+    const redisManager = await redisManagerWrapper.getClient();
+    const indexKey = REDIS_KEY_PATTERNS.GROUP_INDEX(phoneNumberId);
+    
+    // Get all group IDs for this business
+    const allGroupIds = await redisManager.smembers(indexKey);
+    const pendingRequests = [];
+    
+    for (const groupId of allGroupIds) {
+      const joinRequests = await getJoinRequests(redisManagerWrapper, phoneNumberId, groupId);
+      const userRequest = joinRequests.find(jr => jr.wa_id === waId);
+      if (userRequest) {
+        // Also load the group info to get the subject
+        const group = await getGroupFromRedis(redisManagerWrapper, phoneNumberId, groupId);
+        pendingRequests.push({
+          ...userRequest,
+          group_id: groupId,
+          group_subject: group ? group.subject : "Unknown Group"
+        });
+      }
+    }
+    return pendingRequests;
+  } catch (error) {
+    console.error("Error finding join requests by participant:", error);
+    throw error;
+  }
+}
+
+/**
  * Finds the phone number ID for a given group ID
  * @param {object} redisManagerWrapper - Redis manager wrapper instance
  * @param {string} groupId - Group ID
@@ -738,6 +799,7 @@ module.exports = {
   getInviteLink,
   resetInviteLink,
   findGroupsByParticipant,
+  findJoinRequestsByParticipant,
   getPhoneNumberIdByGroupId,
   joinGroupByInviteLink: async (redisManagerWrapper, inviteLinkUrl, waId) => {
     try {

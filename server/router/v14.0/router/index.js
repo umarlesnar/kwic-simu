@@ -959,10 +959,38 @@ router.post("/:dynamic_value/messages", async (req, res) => {
     };
 
     if (body.type === "template" && body.template) {
-      message_value.template = { ...body.template };
-      // Check for group_id in button parameters
-      const buttonComponent = body.template.components?.find(c => c.type === "button");
-      if (buttonComponent && buttonComponent.parameters?.some(p => p.type === "group_id")) {
+      message_value.template = JSON.parse(JSON.stringify(body.template)); // deep copy
+
+      if (Array.isArray(message_value.template.components)) {
+        for (const component of message_value.template.components) {
+          if (Array.isArray(component.parameters)) {
+            for (const param of component.parameters) {
+              if (param.type === "group_id" && param.group_id) {
+                const groupId = param.group_id;
+                // Fetch group and get its invite link
+                let inviteLink = `https://chat.whatsapp.com/mock_link_id`;
+                try {
+                  const group = await getGroupFromRedis(req.redisManager, dynamic_value, groupId);
+                  if (group && group.invite_link) {
+                    inviteLink = group.invite_link;
+                  }
+                } catch (err) {
+                  console.error("Error looking up group for invite link translation:", err);
+                }
+
+                // Translate parameter to text so standard renderers render the invite link URL
+                param.type = "text";
+                param.text = inviteLink;
+                param.group_id = groupId; // preserve for reference
+              }
+            }
+          }
+        }
+      }
+
+      // Check for group_id in button parameters or contains_group_invite
+      const buttonComponent = message_value.template.components?.find(c => c.type === "button");
+      if (buttonComponent && buttonComponent.parameters?.some(p => p.type === "group_id" || p.group_id)) {
         message_value.contains_group_invite = true;
       }
     }

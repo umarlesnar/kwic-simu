@@ -141,6 +141,9 @@ function buildGroupSettingsUpdateSuccess(
   if (join_approval_mode !== undefined) {
     groupPayload.join_approval_mode = join_approval_mode;
   }
+  // if (profile_picture !== undefined) {
+  //   groupPayload.profile_picture = profile_picture;
+  // }
 
   return {
     object: "whatsapp_business_account",
