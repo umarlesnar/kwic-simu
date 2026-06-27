@@ -135,9 +135,7 @@ async function createGroupInRedis(redisManagerWrapper, phoneNumberId, groupData)
     const redisManager = await redisManagerWrapper.getClient();
     const creatorPhone = await resolveDisplayPhoneNumber(redisManager, phoneNumberId);
     const participants = groupData.participants || [];
-    if (creatorPhone && !participants.includes(creatorPhone)) {
-      participants.unshift(creatorPhone);
-    }
+
 
     const group = createGroup({
       phone_number_id: phoneNumberId,
@@ -280,6 +278,21 @@ async function deleteGroupFromRedis(redisManagerWrapper, phoneNumberId, groupId)
     await redisManager.del(joinRequestsKey);
     await redisManager.del(inviteLinkKey);
 
+    // Delete conversations and messages for the group
+    const conversationKeys = await redisManagerWrapper.getKeysByPattern(
+      `conversation:${phoneNumberId}:${groupId}:*`
+    );
+    for (const key of conversationKeys) {
+      await redisManager.del(key);
+    }
+
+    const messageKeys = await redisManagerWrapper.getKeysByPattern(
+      `message:${phoneNumberId}:${groupId}:*`
+    );
+    for (const key of messageKeys) {
+      await redisManager.del(key);
+    }
+
     // Remove from index
     await redisManager.srem(indexKey, groupId);
 
@@ -401,8 +414,8 @@ async function addParticipantsToGroup(
     );
 
     for (const phoneNumber of phoneNumbers) {
-      // Skip if already in group
-      if (!existingWaIds.includes(phoneNumber)) {
+      // Skip if already in group or is the business account (creator/admin)
+      if (!existingWaIds.includes(phoneNumber) && !(group.business_wa_id && phoneNumber === group.business_wa_id)) {
         group.participants.push(phoneNumber);
         addedParticipants.push(phoneNumber);
       }
@@ -708,10 +721,12 @@ async function findGroupsByParticipant(redisManagerWrapper, phoneNumberId, waId)
       
       if (groupData) {
         const group = JSON.parse(groupData);
-        // Check if participant is in group
-        const isParticipant = group.participants.some(p => 
-          (typeof p === 'string' ? p : p.wa_id) === waId
-        );
+        // Check if participant is in group or is the creator/business number
+        const isParticipant = 
+          (group.business_wa_id && group.business_wa_id === waId) ||
+          group.participants.some(p => 
+            (typeof p === 'string' ? p : p.wa_id) === waId
+          );
         
         if (isParticipant) {
           groups.push(group);
@@ -828,7 +843,7 @@ module.exports = {
       
       // Check if user already in group
       const existingWaIds = group.participants.map(p => typeof p === 'string' ? p : p.wa_id);
-      if (existingWaIds.includes(waId)) {
+      if (existingWaIds.includes(waId) || (group.business_wa_id && waId === group.business_wa_id)) {
         return { success: false, error: "User already in group", group_id };
       }
       

@@ -24,8 +24,8 @@ function GroupCreationForm({ phone_number_id, onClose, onGroupCreated }) {
 
   const handleAddParticipant = () => {
     if (participantInput.trim()) {
-      if (formData.participant_phone_numbers.length >= 7) {
-        setError("Maximum 7 additional participants allowed (business phone is automatically added)");
+      if (formData.participant_phone_numbers.length >= 8) {
+        setError("Maximum 8 participants allowed");
         return;
       }
       setFormData((prev) => ({

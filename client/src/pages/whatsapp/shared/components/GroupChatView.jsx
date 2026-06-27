@@ -8,7 +8,6 @@ import {
   MdSend,
   MdAttachFile,
   MdInsertDriveFile,
-  MdPushPin,
 } from "react-icons/md";
 import { io } from "socket.io-client";
 import axios from "axios";
@@ -27,9 +26,6 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
   const [messageInput, setMessageInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [pinTarget, setPinTarget] = useState(null);
-  const [pinExpirationDays, setPinExpirationDays] = useState(7);
-  const [pinBusy, setPinBusy] = useState(false);
 
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -174,41 +170,6 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
     }
   };
 
-  const submitPin = async (operation) => {
-    if (!pinTarget?.id) return;
-    const days = Math.min(30, Math.max(1, parseInt(pinExpirationDays, 10) || 7));
-    const pinBody = {
-      messaging_product: "whatsapp",
-      recipient_type: "group",
-      to: group.id,
-      type: "pin",
-      pin: {
-        type: operation,
-        message_id: pinTarget.id,
-        ...(operation === "pin" ? { expiration_days: days } : {}),
-      },
-    };
-    try {
-      setPinBusy(true);
-      await axios.post(`/v14.0/${phone_number_id}/messages`, pinBody, {
-        headers: authHeaders(),
-      });
-      toast.success(
-        operation === "pin"
-          ? "Pinned Successfully"
-          : "Unpinned Successfully"
-      );
-      setPinTarget(null);
-      await fetchMessages(group.id);
-    } catch (err) {
-      toast.error(
-        err.response?.data?.error?.message || err.message || "Pin request failed"
-      );
-    } finally {
-      setPinBusy(false);
-    }
-  };
-
   return (
     <div className="flex-1 overflow-hidden flex flex-col relative bg-gray-50 dark:bg-gray-900/50">
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
@@ -293,23 +254,13 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
                       })}
                     </p>
                     {msg.id && (
-                      <>
-                        <button
-                          type="button"
-                          title="Pin or unpin"
-                          onClick={() => setPinTarget(msg)}
-                          className="p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10"
-                        >
-                          <MdPushPin className="text-base text-amber-600 dark:text-amber-400" />
-                        </button>
-                        <GroupMessageStatusActions
-                          message={msg}
-                          phone_number_id={phone_number_id}
-                          wba_id={wba_id || "1100000000001"}
-                          group_id={group.id}
-                          refreshMessages={() => fetchMessages(group.id)}
-                        />
-                      </>
+                      <GroupMessageStatusActions
+                        message={msg}
+                        phone_number_id={phone_number_id}
+                        wba_id={wba_id || "1100000000001"}
+                        group_id={group.id}
+                        refreshMessages={() => fetchMessages(group.id)}
+                      />
                     )}
                   </div>
                 </div>
@@ -320,53 +271,6 @@ const GroupChatView = ({ phone_number_id, wba_id, client, group, refreshKey }) =
         <div ref={messagesEndRef} />
       </div>
 
-      {pinTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]">
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-5 max-w-sm w-full mx-4 shadow-xl border border-gray-200 dark:border-gray-600">
-            <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Pin / unpin message</h4>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 break-all">
-              Message id: {pinTarget.id}
-            </p>
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
-              Expiration (days, 1–30) — pin only
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={30}
-              value={pinExpirationDays}
-              onChange={(e) => setPinExpirationDays(e.target.value)}
-              className="w-full mb-4 px-3 py-2 border rounded-lg dark:bg-gray-900 dark:border-gray-600 text-gray-900 dark:text-white"
-            />
-            <div className="flex gap-2 justify-end">
-              <button
-                type="button"
-                className="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600"
-                onClick={() => setPinTarget(null)}
-                disabled={pinBusy}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="px-3 py-2 text-sm rounded-lg bg-gray-200 dark:bg-gray-700"
-                disabled={pinBusy}
-                onClick={() => submitPin("unpin")}
-              >
-                Unpin
-              </button>
-              <button
-                type="button"
-                className="px-3 py-2 text-sm rounded-lg bg-amber-600 text-white disabled:opacity-50"
-                disabled={pinBusy}
-                onClick={() => submitPin("pin")}
-              >
-                {pinBusy ? "…" : "Pin"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
         <form onSubmit={handleSendMessage} className="flex items-center gap-2">

@@ -1056,8 +1056,10 @@ router.post("/:dynamic_value/messages", async (req, res) => {
             }
           });
         }
-        const isParticipant = group.participants.some(p => (typeof p === 'string' ? p : p.wa_id) === dynamic_value);
-        if (!isParticipant) {
+        const isAdmin = 
+          dynamic_value === group.phone_number_id ||
+          (group.business_wa_id && dynamic_value === group.business_wa_id);
+        if (!isAdmin) {
           return res.status(403).json({
             error: {
               message: "Only group admins can pin or unpin messages.",

@@ -1167,6 +1167,9 @@ router.post("/:group_id/participants", resolveWbaIdMiddleware, async (req, res, 
     const eligible_numbers = [];
 
     for (const phoneNumber of phone_numbers) {
+      if (group.business_wa_id && phoneNumber === group.business_wa_id) {
+        continue;
+      }
       if (phoneNumber.startsWith("911451")) {
         const error = graphStyleError(
           131215,
